@@ -1,0 +1,62 @@
+# ============================================================
+# 종가매매 필터 기본값
+# - 모든 수치의 근거는 DESIGN.md 5장(필터 설정 카탈로그)
+# - 원전: 『실패하지 않는 종가매매 시스템 설계서 v2』
+# - 이 파일은 "기본값"이며, 화면에서 바꾼 값은 DB에 따로 저장됨
+#   (기본값 복원 = DB 저장값 삭제)
+# ============================================================
+
+account:
+  total_asset: 10000000        # 계좌 자산(원) — 비중 계산용, 설정 화면에서 입력
+  risk_per_trade_pct: 0.4      # 1R: 한 번 틀렸을 때 잃어도 되는 비율(%) (0.3~0.5 권장)
+  worst_gap_large_pct: 5.0     # 대형·실적주 예상 최악 갭하락(%)
+  worst_gap_theme_pct: 10.0    # 테마·중소형주 예상 최악 갭하락(%)
+  max_positions_per_day: 2     # 하루 최대 종목 수
+  max_total_exposure_pct: 30.0 # 하루 총 노출 한도(% of 계좌)
+  max_sector_exposure_pct: 20.0 # 동일 섹터 노출 한도(%)
+
+trading_value:                 # 단위: 억 원
+  midsmall_min_eok: 300        # 중소형주 최소 거래대금
+  theme_min_eok: 500           # 강한 테마주 최소 거래대금
+  large_rank_max: 50           # 대형주: 거래대금 순위 N위 이내
+  surge_vs_prev_ratio: 3.0     # 전일 대비 거래대금 급증 가점 배수
+  large_cap_threshold_eok: 20000 # 대형주 구분 시가총액(2조)
+
+candle:
+  max_upper_shadow_ratio: 0.40 # 윗꼬리/전체변동폭 — 초과 시 베토
+  min_close_position: 0.50     # (종가-저가)/(고가-저가) — 미만 시 베토
+  good_close_position: 0.70    # 이상이면 "종가 고가권" 가점
+
+late_surge:
+  threshold_time: "14:00"      # 막판 급등 점검 시작 시각
+  max_late_gain_share: 0.60    # 14시 이후 상승분/당일 상승분 — 초과 시 베토
+  min_day_gain_for_check: 5.0  # 당일 등락률(%)이 이 값 이상일 때만 점검
+
+sector:
+  sync_min_count: 3            # 동조 인정: 같은 테마 동반 상승 종목 수
+  sync_min_change: 3.0         # 동조 인정 등락률(%)
+  sync_min_value_eok: 50       # 동조 인정 최소 거래대금(억)
+  overheat_3day_gain: 20.0     # 테마 주도주 3일 누적 상승(%) — 초과 시 후발주 베토
+  smallcap_supply_realloc: true # 소형주는 수급 배점을 거래대금·분봉으로 재배분
+  smallcap_threshold_eok: 3000 # 소형주 구분 시가총액(억)
+
+score:
+  full_weight_cut: 85          # 정상 비중
+  half_weight_cut: 75          # 절반 비중
+  watch_cut: 65                # 관찰만
+
+risk_stock:
+  exclude_warning: true        # 투자주의·경고·위험·단기과열·관리종목 제외
+  cb_lookback_days: 30         # 최근 N일 내 유증·CB 공시 시 제외
+
+calendar:
+  friday_requires_a_grade: true # 금요일·연휴 전일은 A급 재료 + 85점만 절반 비중
+
+universe:
+  min_change_rate: 3.0         # 상승률 상위 편입 컷(%)
+  rank_fetch_count: 30         # 순위 API 1회 조회 종목 수
+
+kis:
+  rate_limit_per_sec: 10       # 실전 한도 20건/초의 절반(안전 마진)
+  timeout_sec: 10
+  max_retries: 3
