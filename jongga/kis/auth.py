@@ -32,11 +32,18 @@ def get_access_token(force: bool = False) -> str:
             return token
 
     app_key, app_secret = require_kis_keys()
-    resp = requests.post(
-        f"{kis_base_url()}/oauth2/tokenP",
-        json={"grant_type": "client_credentials", "appkey": app_key, "appsecret": app_secret},
-        timeout=10,
-    )
+    try:
+        resp = requests.post(
+            f"{kis_base_url()}/oauth2/tokenP",
+            json={"grant_type": "client_credentials", "appkey": app_key, "appsecret": app_secret},
+            timeout=10,
+        )
+    except requests.RequestException as exc:
+        raise SystemExit(
+            "한국투자증권 서버(openapi.koreainvestment.com:9443)에 연결할 수 없습니다.\n"
+            "- 인터넷 연결과 방화벽/네트워크 정책(9443 포트 허용 여부)을 확인해주세요.\n"
+            f"- 상세: {exc.__class__.__name__}"
+        ) from exc
     body = resp.json()
     if resp.status_code != 200 or "access_token" not in body:
         raise SystemExit(

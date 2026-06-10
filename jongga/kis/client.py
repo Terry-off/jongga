@@ -77,4 +77,9 @@ class KisClient:
             last_error = KisApiError(msg_cd or str(resp.status_code), str(body.get("msg1", ""))[:200])
             time.sleep(2 ** attempt)
 
+        if isinstance(last_error, requests.RequestException):
+            raise KisApiError(
+                "NETWORK",
+                "한국투자증권 서버에 연결할 수 없습니다. 인터넷 연결과 방화벽(9443 포트)을 확인해주세요.",
+            ) from last_error
         raise last_error if last_error else KisApiError("UNKNOWN", "원인을 알 수 없는 오류")

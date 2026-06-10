@@ -96,4 +96,12 @@ def main(argv=None) -> None:
     p_db.set_defaults(func=cmd_init_db)
 
     args = parser.parse_args(argv)
-    sys.exit(args.func(args))
+    try:
+        sys.exit(args.func(args))
+    except Exception as exc:
+        from jongga.kis.client import KisApiError
+
+        if isinstance(exc, (KisApiError, SystemExit)):
+            raise
+        print(f"\n오류가 발생했습니다: {exc.__class__.__name__}: {exc}", file=sys.stderr)
+        sys.exit(1)
