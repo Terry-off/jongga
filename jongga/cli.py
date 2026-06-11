@@ -152,6 +152,29 @@ def cmd_recommend(args) -> int:
     return 0
 
 
+def cmd_material(args) -> int:
+    from jongga.material.engine import MaterialEngine, enabled
+
+    if not enabled():
+        print("재료 분석 키가 없습니다. .env에 DART_API_KEY 또는 NAVER_CLIENT_ID/SECRET을 넣어주세요.")
+        return 1
+    print(f"'{args.name}' ({args.code}) 재료 확인 중... (오늘 기사 + 최근 30일 공시)")
+    res = MaterialEngine().evaluate(args.code, args.name)
+    if not res["checked"]:
+        print("조회에 실패했어요. 인터넷 연결을 확인해주세요.")
+        return 1
+    grade = res["grade"]
+    label = {"A": "A급 — 강한 재료", "B": "B급 — 테마 확산 확인 필요", "C": "C급 — 단독 신호, 동반 조건 필요"}
+    print(f"\n판정: {label.get(grade, '재료 없음 — 이유 없는 급등일 수 있어요')}")
+    for e in res["evidence"]:
+        print(f"  · {e}")
+    if res["risks"]:
+        print("⚠️ 물량 이벤트 (베토 대상):")
+        for r in res["risks"]:
+            print(f"  · {r}")
+    return 0
+
+
 def cmd_init_db(_args) -> int:
     from jongga.db import init_db
 
@@ -185,6 +208,11 @@ def main(argv=None) -> None:
     p_rec.add_argument("--top", type=int, default=None, help="분석할 종목 수 (기본: 설정의 40)")
     p_rec.add_argument("--save", action="store_true", help="결과를 DB에 저장 (복기용)")
     p_rec.set_defaults(func=cmd_recommend)
+
+    p_mat = sub.add_parser("material", help="종목 재료(뉴스·공시) 등급 즉석 확인")
+    p_mat.add_argument("code", help="종목코드 6자리 (예: 005930)")
+    p_mat.add_argument("name", help="종목명 (예: 삼성전자)")
+    p_mat.set_defaults(func=cmd_material)
 
     p_db = sub.add_parser("init-db", help="DB 파일 생성")
     p_db.set_defaults(func=cmd_init_db)

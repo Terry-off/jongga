@@ -41,6 +41,12 @@ class DemoProvider:
     def theme_map(self):
         return {}
 
+    def material_enabled(self):
+        return True
+
+    def materials(self, code, name):
+        return self.day["materials"].get(code)
+
 
 class LiveProvider:
     """한국투자증권 API 실시간 — 당일 기준"""
@@ -48,6 +54,7 @@ class LiveProvider:
     def __init__(self):
         from jongga.kis.client import KisClient
         self.client = KisClient()
+        self._material_engine = None
 
     def universe(self):
         from jongga.universe import collect_universe
@@ -92,4 +99,16 @@ class LiveProvider:
         return out
 
     def theme_map(self):
-        return {}  # M3에서 네이버 테마 수집으로 채움
+        return {}  # 테마 수집은 M3.5에서 합류
+
+    def material_enabled(self):
+        from jongga.material.engine import enabled
+        return enabled()
+
+    def materials(self, code, name):
+        from jongga.material.engine import MaterialEngine
+        if not self.material_enabled():
+            return None
+        if self._material_engine is None:
+            self._material_engine = MaterialEngine()
+        return self._material_engine.evaluate(code, name)

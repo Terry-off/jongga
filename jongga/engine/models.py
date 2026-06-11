@@ -62,7 +62,11 @@ class StockView:
     theme_sync_count: int = 0
     is_theme_leader: bool = False
     theme_leader_3d_gain: float = 0.0
-    material_grade: str | None = None   # A/B/C — M3에서 채움
+    material_grade: str | None = None    # A/B/C — 재료 엔진 결과 (검증 후 확정값)
+    material_checked: bool = False       # False = 조회 실패('확인 불가'), True+None = 재료 없음(베토 1)
+    material_evidence: list = field(default_factory=list)
+    material_risks: list = field(default_factory=list)
+    material_note: str = ""
 
 
 @dataclass

@@ -41,10 +41,11 @@ def run_vetoes(s: StockView, ctx: DayContext) -> list[Veto]:
     vetoes: list[Veto] = []
     today = s.daily[-1] if s.daily else None
 
-    # 베토 1. 재료 불명확 — 재료 엔진(M3)이 켜진 경우에만 적용
-    if ctx.material_available and s.material_grade is None:
-        vetoes.append(Veto("V1", "재료 없음",
-                           "오를 만한 이유(뉴스·공시)를 찾지 못했어요. 이유 없는 급등은 따라가지 않아요."))
+    # 베토 1. 재료 불명확 — 엔진이 켜져 있고 조회도 성공했는데 재료가 없을 때만
+    #          (조회 실패는 베토가 아니라 '확인 불가' 처리)
+    if ctx.material_available and s.material_checked and s.material_grade is None:
+        easy = s.material_note or "오를 만한 이유(뉴스·공시)를 찾지 못했어요. 이유 없는 급등은 따라가지 않아요."
+        vetoes.append(Veto("V1", "재료 없음", easy))
 
     # 베토 2. 거래대금 미달
     eok = s.trading_value / 1e8
@@ -90,13 +91,17 @@ def run_vetoes(s: StockView, ctx: DayContext) -> list[Veto]:
                                f"'{s.theme}' 테마 1등이 이미 3일간 {s.theme_leader_3d_gain:.0f}% 올랐어요. "
                                "뒤따라 오른 종목은 조정이 오면 가장 먼저 버려져요."))
 
-    # 베토 6. 위험종목
+    # 베토 6. 위험종목 (거래소 경보 + 최근 유증·CB 등 물량 이벤트)
     if cfg("risk_stock.exclude_warning", True):
         risks = risky_flags(s.flags)
         if risks:
             vetoes.append(Veto("V6", f"위험 지정: {', '.join(risks)}",
                                "거래소가 경고 딱지를 붙인 종목이에요. 차트가 아무리 좋아도 "
                                "내가 통제할 수 없는 이유로 급락할 수 있어 무조건 제외해요."))
+    if s.material_risks:
+        vetoes.append(Veto("V6", "최근 물량 이벤트",
+                           f"최근 한 달 안에 '{s.material_risks[0]}' 공시가 있었어요. "
+                           "새 주식이 풀리는 이벤트는 언제든 내 머리 위에서 매물이 쏟아질 수 있다는 뜻이에요."))
 
     # 베토 7. 익일 대형 이벤트
     if ctx.events_tomorrow:

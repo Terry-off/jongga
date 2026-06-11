@@ -35,11 +35,33 @@ def score_market(ctx: DayContext) -> ScoreItem:
 def score_material(s: StockView, ctx: DayContext) -> ScoreItem:
     if not ctx.material_available:
         return ScoreItem("material", "재료(뉴스·공시)", 0, 20, False,
-                         ["재료 자동 분석은 M3 단계에서 합류해요"])
-    grade_points = {"A": 20.0, "B": 12.0, "C": 6.0}
-    earned = grade_points.get(s.material_grade or "", 0.0)
-    return ScoreItem("material", "재료(뉴스·공시)", earned, 20, True,
-                     [f"재료 등급 {s.material_grade}급"] if s.material_grade else [])
+                         ["재료 분석이 꺼져 있어요 (DART·네이버 API 키가 필요해요)"])
+    if not s.material_checked:
+        return ScoreItem("material", "재료(뉴스·공시)", 0, 20, False,
+                         ["재료 조회에 실패해서 확인 불가로 처리했어요"])
+    notes = list(s.material_evidence[:2])
+    if s.material_note:
+        notes.append(s.material_note)
+    if s.material_grade == "A":
+        earned = 20.0
+        notes.insert(0, "A급 재료 — 내일 아침에도 새 매수자를 부를 만한 강한 이유예요")
+    elif s.material_grade == "B":
+        if ctx.theme_available:
+            if s.theme_sync_count >= ctx.cfg("sector.sync_min_count", 3):
+                earned = 12.0
+                notes.insert(0, "B급 재료 + 테마가 같이 움직여서 인정했어요")
+            else:
+                earned = 4.0
+                notes.insert(0, "B급 재료지만 테마 확산이 없어 보수적으로 반영했어요")
+        else:
+            earned = 6.0
+            notes.insert(0, "B급 재료 — 테마 동조를 확인할 수 없어 절반만 반영했어요")
+    elif s.material_grade == "C":
+        earned = 6.0
+        notes.insert(0, "C급(단독성) 재료 — 동반 조건을 충족해 제한적으로만 인정했어요")
+    else:
+        earned = 0.0
+    return ScoreItem("material", "재료(뉴스·공시)", earned, 20, True, notes)
 
 
 def score_sector(s: StockView, ctx: DayContext) -> ScoreItem:

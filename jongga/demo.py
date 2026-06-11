@@ -1,11 +1,12 @@
 """시연용 '가상의 하루' — 설계서의 좋은/나쁜 유형을 하나씩 보여주는 결정적(랜덤 없음) 데이터
 
 종목 구성:
-  알파전자   — 모범 사례: 고가권 마감, 오후 저점 상승, 외인·기관 양매수 → 정상 비중 후보
-  감마바이오 — 베토 4: 오후 2시 이후 수직 급등
+  알파전자   — 모범 사례: A급 재료(수주 공시) + 고가권 마감 + 외인·기관 양매수 → 정상 비중 후보
+  감마바이오 — 베토 4: 오후 2시 이후 수직 급등 (재료가 C급 '단독' 기사뿐인 전형적 함정)
   베타테크   — 베토 3: 장대 윗꼬리 + 힘없는 종가
-  엡실론건설 — 베토 6: 투자경고 지정
-  델타소재   — 베토는 통과하지만 점수가 낮아 '관찰만'
+  엡실론건설 — 베토 6: 투자경고 지정 (A급 재료가 있어도 위험종목은 무조건 제외)
+  제타식품   — B급 재료, 차트 무난 → 점수 70점대 '관찰만'
+  델타소재   — 베토 1: 차트는 괜찮은데 재료(이유) 없는 급등 → 제외
 """
 
 DEMO_DATE = "2026-06-10"  # 수요일, 익일 이벤트 없음
@@ -151,6 +152,39 @@ def build_demo_day() -> dict:
                          daily_base=gen_daily(59, 19000, 20000, 250000, int(250e8), spike_high=23000),
                          investor_rows=[{"date": "20260610", "foreign_net": -3000, "inst_net": -1000, "person_net": 4200}]))
 
+    # 제타식품 — B급 재료(목표가 상향), 차트 무난 → '관찰만' (+7.3%)
+    zeta_min = gen_minutes(
+        waypoints=[("0900", 15450), ("1000", 15400), ("1300", 15800), ("1345", 15860),
+                   ("1400", 15840), ("1430", 15950), ("1445", 15930), ("1510", 16050),
+                   ("1515", 16200), ("1519", 16120)],
+        vol_segments=[("0900", "1300", 1000), ("1300", "1510", 700), ("1510", "1520", 1400)],
+        final_close=16100, final_volume=12000,
+    )
+    stocks.append(_stock("206060", "제타식품", "KOSPI", 15000, zeta_min,
+                         cap_eok=5000, prev_value=int(300e8), today_value=int(420e8),
+                         daily_base=gen_daily(59, 14000, 15000, 300000, int(300e8), spike_high=16800),
+                         investor_rows=[{"date": "20260610", "foreign_net": -2000, "inst_net": 9000, "person_net": -7000}]))
+
+    materials = {
+        "201010": {"checked": True, "grade": "A", "risks": [], "evidence": [
+            "공시(A급): 단일판매ㆍ공급계약체결 — 해외 2차전지 장비 320억 원",
+            "기사(A급 신호): 알파전자, 유럽 배터리사와 320억 규모 공급계약 수주",
+        ]},
+        "203030": {"checked": True, "grade": "C", "risks": [], "evidence": [
+            "기사(C급 신호): [단독] 감마바이오, 신약 기술수출 추진 중",
+        ]},
+        "202020": {"checked": True, "grade": "B", "risks": [], "evidence": [
+            "기사(B급 신호): 증권가, 베타테크 목표가 상향 행렬",
+        ]},
+        "205050": {"checked": True, "grade": "A", "risks": [], "evidence": [
+            "기사(A급 신호): 엡실론건설, 해외 플랜트 수주 임박",
+        ]},
+        "206060": {"checked": True, "grade": "B", "risks": [], "evidence": [
+            "기사(B급 신호): 제타식품 목표가 상향 — K푸드 수출 성장 지속",
+        ]},
+        "204040": {"checked": True, "grade": None, "risks": [], "evidence": []},
+    }
+
     # 지수 — 코스피·코스닥 모두 오후 회복형 (양호한 환경)
     kospi_min = gen_minutes(
         waypoints=[("0900", 2595), ("1000", 2580), ("1200", 2598), ("1300", 2600),
@@ -168,6 +202,7 @@ def build_demo_day() -> dict:
         "daily": {s[0]["code"]: s[2] for s in stocks},
         "minutes": {s[0]["code"]: s[3] for s in stocks},
         "investor": {s[0]["code"]: s[4] for s in stocks},
+        "materials": materials,
         "index": {
             "KOSPI": {"prev_close": 2600.0, "minutes": kospi_min},
             "KOSDAQ": {"prev_close": 850.0, "minutes": kosdaq_min},

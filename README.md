@@ -63,6 +63,7 @@ python -m jongga recommend --demo
 | 명령 | 설명 |
 |---|---|
 | `python -m jongga recommend [--demo] [--save] [--top 40]` | **종가매매 후보 추천** — 신호등·점수·이유·비중까지 |
+| `python -m jongga material 005930 삼성전자` | 종목 재료(뉴스·공시) 등급 즉석 확인 |
 | `python -m jongga smoke` | KIS API 연결 테스트 (토큰 + 삼성전자 현재가) |
 | `python -m jongga universe [--save] [--top 30]` | 오늘 돈이 몰린 종목 목록 |
 | `python -m jongga init-db` | DB 파일 생성 (--save 시 자동 실행됨) |
@@ -78,6 +79,7 @@ jongga/
 ├── config/calendar.yaml # FOMC·휴장일 내장 캘린더 (직접 수정 가능)
 ├── jongga/
 │   ├── engine/          # 판단 엔진: 베토 9개·100점 채점·신호등·비중 계산
+│   ├── material/        # 재료 엔진: DART 공시 + 네이버 뉴스 → A/B/C 등급
 │   ├── kis/             # 한국투자증권 API (토큰·호출제한·시세·분봉·수급)
 │   ├── providers.py     # 데이터 공급자 (실시간 API / 시연 데이터)
 │   ├── demo.py          # 시연용 '가상의 하루'
@@ -91,8 +93,8 @@ jongga/
 ## 로드맵
 
 - [x] **M1** KIS 연동 기반 + 유니버스 수집 CLI
-- [x] **M2** 베토 9개 + 채점 엔진 + 시장 신호등 + 추천 CLI ← 현재
-- [ ] **M3** 재료 엔진 (DART 공시 + 네이버 뉴스 자동 등급)
+- [x] **M2** 베토 9개 + 채점 엔진 + 시장 신호등 + 추천 CLI
+- [x] **M3** 재료 엔진 (DART 공시 + 네이버 뉴스 자동 등급) ← 현재
 - [ ] **M4** 웹 대시보드 (토스 스타일 카드 UI)
 - [ ] **M5** 일일 자동 스냅샷 수집기 + 과거 조회
 - [ ] **M6** 매매일지 + 킬스위치 + 검증 리포트
