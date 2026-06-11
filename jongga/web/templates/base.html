@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}종가매매 추천{% endblock %}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif; }
+    details > summary { list-style: none; }
+    details > summary::-webkit-details-marker { display: none; }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-900">
+  <div class="max-w-3xl mx-auto px-4 py-6">
+    <header class="flex items-center justify-between mb-5 gap-2 flex-wrap">
+      <a href="/" class="text-xl font-extrabold tracking-tight">📈 종가매매 추천</a>
+      <nav class="flex items-center gap-2 text-sm">{% block nav %}{% endblock %}</nav>
+    </header>
+    {% block content %}{% endblock %}
+    <footer class="mt-10 pb-6 text-xs text-slate-400 leading-relaxed">
+      ⚠️ 이 프로그램은 추천(스크리닝) 도구일 뿐이에요. 매매를 실행하지 않으며,
+      모든 투자 판단과 책임은 투자자 본인에게 있어요.
+      기준값은 『실패하지 않는 종가매매 시스템 설계서 v2』의 수치이며 설정에서 바꿀 수 있어요.
+    </footer>
+  </div>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

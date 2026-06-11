@@ -35,6 +35,12 @@ CREATE TABLE IF NOT EXISTS screening_day (
     created_at     TEXT
 );
 
+CREATE TABLE IF NOT EXISTS settings_override (
+    key        TEXT PRIMARY KEY,
+    value      TEXT,
+    updated_at TEXT
+);
+
 CREATE TABLE IF NOT EXISTS screening_result (
     trade_date    TEXT NOT NULL,
     code          TEXT NOT NULL,

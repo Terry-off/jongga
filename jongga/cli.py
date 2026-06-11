@@ -175,6 +175,25 @@ def cmd_material(args) -> int:
     return 0
 
 
+def cmd_web(args) -> int:
+    try:
+        import uvicorn
+    except ImportError:
+        print("웹 화면 구성 요소가 없습니다. 먼저 실행해주세요:  pip install -r requirements.txt")
+        return 1
+    from jongga.web.app import create_app
+
+    app = create_app(demo=args.demo)
+    mode = "시연 모드 (가상 데이터)" if args.demo else "실전 모드 (한국투자증권 API)"
+    print("─" * 56)
+    print(f"  종가매매 추천 대시보드 — {mode}")
+    print(f"  브라우저에서 열기 →  http://127.0.0.1:{args.port}")
+    print("  끄려면 이 창에서 Ctrl+C")
+    print("─" * 56)
+    uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
+    return 0
+
+
 def cmd_init_db(_args) -> int:
     from jongga.db import init_db
 
@@ -208,6 +227,12 @@ def main(argv=None) -> None:
     p_rec.add_argument("--top", type=int, default=None, help="분석할 종목 수 (기본: 설정의 40)")
     p_rec.add_argument("--save", action="store_true", help="결과를 DB에 저장 (복기용)")
     p_rec.set_defaults(func=cmd_recommend)
+
+    p_web = sub.add_parser("web", help="웹 대시보드 실행 (브라우저 화면)")
+    p_web.add_argument("--demo", action="store_true", help="가상 데이터로 화면 구경")
+    p_web.add_argument("--port", type=int, default=8765)
+    p_web.add_argument("--host", default="127.0.0.1")
+    p_web.set_defaults(func=cmd_web)
 
     p_mat = sub.add_parser("material", help="종목 재료(뉴스·공시) 등급 즉석 확인")
     p_mat.add_argument("code", help="종목코드 6자리 (예: 005930)")

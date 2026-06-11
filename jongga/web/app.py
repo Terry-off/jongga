@@ -1,0 +1,161 @@
+"""웹 대시보드 — 추천 화면·설정 화면 (DESIGN.md 6장)
+
+실행: python -m jongga web [--demo] [--port 8765]
+결과는 메모리에 캐시되고 '다시 스캔' 버튼으로 갱신한다.
+설정 저장 시 캐시를 비워 다음 조회부터 새 기준이 적용된다.
+"""
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.templating import Jinja2Templates
+
+from jongga import settings
+from jongga.engine import pipeline
+from jongga.engine.position import explain_position
+from jongga.web import settings_meta
+
+TEMPLATES_DIR = Path(__file__).parent / "templates"
+KST = timezone(timedelta(hours=9))
+
+SIGNAL_STYLE = {
+    "green": {"icon": "🟢", "text": "매매해도 좋은 환경이에요",
+              "cls": "bg-emerald-50 border-emerald-200 text-emerald-900"},
+    "yellow": {"icon": "🟡", "text": "조심해야 하는 날이에요",
+               "cls": "bg-amber-50 border-amber-200 text-amber-900"},
+    "red": {"icon": "🔴", "text": "오늘은 쉬는 날이에요",
+            "cls": "bg-red-50 border-red-200 text-red-900"},
+}
+
+
+def _eok(won) -> str:
+    return f"{won / 1e8:,.0f}억"
+
+
+def create_app(demo: bool = False) -> FastAPI:
+    app = FastAPI(title="종가매매 추천")
+    templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+    templates.env.filters["eok"] = _eok
+    templates.env.filters["comma"] = lambda v: f"{v:,}"
+
+    state = {"result": None, "ran_at": None, "error": None, "demo": demo}
+
+    def run_pipeline():
+        if state["demo"]:
+            from jongga.demo import DEMO_DATE
+            from jongga.providers import DemoProvider
+            state["result"] = pipeline.run(DemoProvider(), trade_date=DEMO_DATE)
+        else:
+            from jongga.providers import LiveProvider
+            state["result"] = pipeline.run(LiveProvider())
+        state["ran_at"] = datetime.now().strftime("%H:%M")
+        state["error"] = None
+
+    def _cards(result):
+        cards = []
+        for c in result.candidates:
+            if c.verdict not in ("full", "half"):
+                continue
+            notes = [n for it in c.items if it.available and it.key != "market" for n in it.notes][:4]
+            pos = explain_position(settings.cfg, c.stock_class, c.verdict, c.position_amount) \
+                if c.position_amount else ""
+            cards.append({"c": c, "notes": notes, "pos": pos})
+        return cards
+
+    @app.get("/", response_class=HTMLResponse)
+    def home(request: Request):
+        if state["result"] is None and state["error"] is None:
+            try:
+                run_pipeline()
+            except Exception as exc:
+                state["error"] = str(exc)
+        result = state["result"]
+        return templates.TemplateResponse(request, "index.html", {
+            "result": result,
+            "demo": state["demo"],
+            "ran_at": state["ran_at"],
+            "error": state["error"],
+            "signal": SIGNAL_STYLE.get(result.signal.color) if result else None,
+            "cards": _cards(result) if result else [],
+            "watch": [c for c in result.candidates if c.verdict == "watch"] if result else [],
+        })
+
+    @app.post("/scan")
+    def scan():
+        try:
+            run_pipeline()
+        except Exception as exc:
+            state["error"] = str(exc)
+            state["result"] = None
+        return RedirectResponse("/", status_code=303)
+
+    @app.get("/api/chart/{code}")
+    def chart(code: str):
+        result = state["result"]
+        stock = None
+        if result:
+            for c in result.candidates:
+                if c.stock.code == code:
+                    stock = c.stock
+                    break
+            if stock is None:
+                for s, _ in result.rejected:
+                    if s.code == code:
+                        stock = s
+                        break
+        if stock is None:
+            return JSONResponse({"daily": [], "minutes": []}, status_code=404)
+        daily = [
+            {"time": f"{d['date'][:4]}-{d['date'][4:6]}-{d['date'][6:]}",
+             "open": d["open"], "high": d["high"], "low": d["low"], "close": d["close"]}
+            for d in stock.daily[-60:] if len(str(d.get("date", ""))) == 8
+        ]
+        base = datetime.fromisoformat(result.date).replace(tzinfo=KST)
+        minutes = [
+            {"time": int(base.replace(hour=int(m["time"][:2]), minute=int(m["time"][2:])).timestamp()),
+             "value": m["close"]}
+            for m in stock.minutes
+        ]
+        return JSONResponse({"daily": daily, "minutes": minutes})
+
+    @app.get("/settings", response_class=HTMLResponse)
+    def settings_page(request: Request, saved: int = 0, reset: int = 0):
+        return templates.TemplateResponse(request, "settings.html", {
+            "groups": settings_meta.render(),
+            "saved": saved,
+            "reset": reset,
+            "override_count": len(settings.overrides()),
+        })
+
+    @app.post("/settings")
+    async def settings_save(request: Request):
+        form = await request.form()
+        for it in settings_meta.all_items():
+            key = it["key"]
+            if it["type"] == "bool":
+                new_raw = "true" if form.get(key) else "false"
+                same = (new_raw == "true") == bool(it["default"])
+            else:
+                raw = str(form.get(key) or "").strip()
+                if raw == "":
+                    continue
+                try:
+                    same = abs(float(raw) - float(it["default"])) < 1e-9
+                except (TypeError, ValueError):
+                    continue
+                new_raw = raw
+            if same:
+                settings.remove_override(key)
+            else:
+                settings.set_override(key, new_raw)
+        state["result"] = None  # 다음 조회부터 새 기준 적용
+        return RedirectResponse("/settings?saved=1", status_code=303)
+
+    @app.post("/settings/reset")
+    def settings_reset():
+        settings.clear_overrides()
+        state["result"] = None
+        return RedirectResponse("/settings?reset=1", status_code=303)
+
+    return app

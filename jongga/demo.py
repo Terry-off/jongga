@@ -9,7 +9,19 @@
   델타소재   — 베토 1: 차트는 괜찮은데 재료(이유) 없는 급등 → 제외
 """
 
+from datetime import date, timedelta
+
 DEMO_DATE = "2026-06-10"  # 수요일, 익일 이벤트 없음
+
+
+def _weekdays_back(n: int, end: str = "2026-06-09") -> list[str]:
+    d = date.fromisoformat(end)
+    out = []
+    while len(out) < n:
+        if d.weekday() < 5:
+            out.append(d.strftime("%Y%m%d"))
+        d -= timedelta(days=1)
+    return out[::-1]
 
 
 def _t2i(t: str) -> int:
@@ -51,13 +63,14 @@ def gen_minutes(waypoints: list[tuple[str, float]], vol_segments: list[tuple[str
 
 def gen_daily(days: int, start: float, end: float, volume: int, value: int,
               spike_high: float | None = None, spike_at: int = 30) -> list[dict]:
+    dates = _weekdays_back(days)
     out = []
     for i in range(days):
         c = start + (end - start) * i / max(days - 1, 1)
         high = c * 1.005
         if spike_high and i == spike_at:
             high = spike_high
-        out.append({"date": f"d{i:02d}", "open": c * 0.995, "high": high,
+        out.append({"date": dates[i], "open": c * 0.995, "high": high,
                     "low": c * 0.99, "close": c, "volume": volume, "trading_value": value})
     return out
 
@@ -66,7 +79,7 @@ def _stock(code, name, market, prev_close, minutes, cap_eok, prev_value, today_v
            daily_base, investor_rows, warn="00"):
     today_close = minutes[-1]["close"]
     today = {
-        "date": "today",
+        "date": DEMO_DATE.replace("-", ""),
         "open": minutes[0]["open"],
         "high": max(m["high"] for m in minutes),
         "low": min(m["low"] for m in minutes),
