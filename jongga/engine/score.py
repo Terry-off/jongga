@@ -67,7 +67,7 @@ def score_material(s: StockView, ctx: DayContext) -> ScoreItem:
 def score_sector(s: StockView, ctx: DayContext) -> ScoreItem:
     if not ctx.theme_available:
         return ScoreItem("sector", "테마 동조", 0, 15, False,
-                         ["테마 데이터 수집은 M3 단계에서 합류해요"])
+                         ["테마 데이터가 없어요 — python -m jongga collect-themes 로 수집할 수 있어요"])
     earned, notes = 0.0, []
     if s.theme_sync_count >= ctx.cfg("sector.sync_min_count", 3):
         earned += 8

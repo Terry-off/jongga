@@ -165,7 +165,8 @@ def build_demo_day() -> dict:
                          daily_base=gen_daily(59, 19000, 20000, 250000, int(250e8), spike_high=23000),
                          investor_rows=[{"date": "20260610", "foreign_net": -3000, "inst_net": -1000, "person_net": 4200}]))
 
-    # 제타식품 — B급 재료(목표가 상향), 차트 무난 → '관찰만' (+7.3%)
+    # 제타식품 — B급 재료(목표가 상향) + 2차전지 테마 동반 상승하지만 대장주는 아님(후발주)
+    #            → 동조 가점은 받되 대장주 점수를 못 받아 '관찰만' (+7.3%)
     zeta_min = gen_minutes(
         waypoints=[("0900", 15450), ("1000", 15400), ("1300", 15800), ("1345", 15860),
                    ("1400", 15840), ("1430", 15950), ("1445", 15930), ("1510", 16050),
@@ -174,7 +175,7 @@ def build_demo_day() -> dict:
         final_close=16100, final_volume=12000,
     )
     stocks.append(_stock("206060", "제타식품", "KOSPI", 15000, zeta_min,
-                         cap_eok=5000, prev_value=int(300e8), today_value=int(420e8),
+                         cap_eok=5000, prev_value=int(300e8), today_value=int(560e8),
                          daily_base=gen_daily(59, 14000, 15000, 300000, int(300e8), spike_high=16800),
                          investor_rows=[{"date": "20260610", "foreign_net": -2000, "inst_net": 9000, "person_net": -7000}]))
 
@@ -216,6 +217,11 @@ def build_demo_day() -> dict:
         "minutes": {s[0]["code"]: s[3] for s in stocks},
         "investor": {s[0]["code"]: s[4] for s in stocks},
         "materials": materials,
+        # 테마 매핑 — '2차전지장비'에서 알파전자가 대장주, 제타식품은 후발주(동조하나 1등 아님)
+        "themes": {
+            "2차전지장비": ["201010", "202020", "204040", "206060"],  # 알파(대장)·베타·델타·제타(후발)
+            "바이오신약": ["203030"],                                  # 감마 단독 → 동조 미달
+        },
         "index": {
             "KOSPI": {"prev_close": 2600.0, "minutes": kospi_min},
             "KOSDAQ": {"prev_close": 850.0, "minutes": kosdaq_min},

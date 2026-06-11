@@ -76,20 +76,23 @@ class TestDemoPipeline(unittest.TestCase):
         self.assertEqual(self.result.signal.color, "green")
         self.assertTrue(self.result.signal.index_available)
 
-    def test_alpha_is_full_weight_candidate(self):
+    def test_alpha_is_full_weight_leader(self):
         alpha = next(c for c in self.result.candidates if c.stock.code == "201010")
         self.assertEqual(alpha.verdict, "full")
         self.assertGreaterEqual(alpha.pct, 85)
         self.assertEqual(alpha.position_amount, 400_000)
         self.assertEqual(alpha.stock.material_grade, "A")
-        # 테마 동조만 확인 불가 → 만점 85점 기준
-        self.assertEqual(alpha.available_max, 85)
+        self.assertTrue(alpha.stock.is_theme_leader)        # 2차전지 대장주
+        self.assertEqual(alpha.stock.theme, "2차전지장비")
+        self.assertEqual(alpha.available_max, 100)          # 테마까지 확인되어 만점 100
 
-    def test_zeta_is_watch_only(self):
+    def test_zeta_is_watch_follower(self):
         zeta = next(c for c in self.result.candidates if c.stock.code == "206060")
         self.assertEqual(zeta.verdict, "watch")
         self.assertEqual(zeta.position_amount, 0)
-        self.assertEqual(zeta.available_max, 85)
+        self.assertGreaterEqual(zeta.stock.theme_sync_count, 3)  # 동조는 하지만
+        self.assertFalse(zeta.stock.is_theme_leader)            # 대장주는 아님(후발주)
+        self.assertEqual(zeta.available_max, 100)
 
     def test_veto_reasons(self):
         rejected = {s.code: [v.code for v in vetoes] for s, vetoes in self.result.rejected}

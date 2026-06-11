@@ -75,6 +75,10 @@ def run(provider, trade_date: str | None = None, top_n: int | None = None) -> Da
     pre_holiday = calendar_events.is_pre_holiday(d)
     theme_map = provider.theme_map()
     theme_available = bool(theme_map)
+    resolver = None
+    if theme_available:
+        from jongga.theme.resolver import ThemeResolver
+        resolver = ThemeResolver(theme_map, universe, cfg, daily_fn=provider.daily)
 
     material_available = bool(getattr(provider, "material_enabled", lambda: False)())
     signal = market.judge(provider.index(), events_tomorrow, pre_holiday,
@@ -90,6 +94,8 @@ def run(provider, trade_date: str | None = None, top_n: int | None = None) -> Da
     analyzed = universe[:top_n]
     for rank, row in enumerate(analyzed, start=1):
         stock = _load_stock(provider, row, rank)
+        if resolver:
+            resolver.annotate(stock)
         if material_available:
             mat = provider.materials(stock.code, stock.name) or {}
             stock.material_checked = bool(mat.get("checked"))

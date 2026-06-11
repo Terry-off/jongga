@@ -39,7 +39,7 @@ class DemoProvider:
         return self.day["index"]
 
     def theme_map(self):
-        return {}
+        return self.day.get("themes", {})
 
     def material_enabled(self):
         return True
@@ -99,7 +99,22 @@ class LiveProvider:
         return out
 
     def theme_map(self):
-        return {}  # 테마 수집은 M3.5에서 합류
+        """오늘 수집된 테마맵을 DB에서 읽는다. 없으면 가장 최근 수집분으로 대체.
+        둘 다 없으면 빈 dict → '테마 확인 불가'로 우아하게 후퇴 (collect-themes 안내)."""
+        from datetime import date as _date
+        from jongga.db import latest_theme_date, load_theme_map
+        today = _date.today().isoformat()
+        themes = load_theme_map(today)
+        if themes:
+            return themes
+        recent = latest_theme_date()
+        if recent:
+            print(f"(안내) 오늘 테마 수집분이 없어 {recent} 수집분으로 대체합니다 "
+                  f"(최신화: python -m jongga collect-themes)", file=sys.stderr)
+            return load_theme_map(recent)
+        print("(안내) 테마 데이터가 없습니다 — 테마 항목은 '확인 불가'로 처리됩니다 "
+              "(수집: python -m jongga collect-themes)", file=sys.stderr)
+        return {}
 
     def material_enabled(self):
         from jongga.material.engine import enabled

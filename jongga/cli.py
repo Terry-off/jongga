@@ -194,6 +194,30 @@ def cmd_web(args) -> int:
     return 0
 
 
+def cmd_collect_themes(_args) -> int:
+    from datetime import date
+
+    from jongga.db import save_theme_map
+    from jongga.theme import scraper
+
+    print("네이버 금융에서 테마-종목 매핑을 수집 중이에요... (수백 개 테마라 1~3분 걸려요)")
+
+    def progress(i, total, name):
+        if i % 25 == 0 or i == total:
+            print(f"  {i}/{total} 테마 처리 중... (최근: {name})")
+
+    theme_map = scraper.collect(progress=progress)
+    if not theme_map:
+        print("테마를 수집하지 못했어요. 인터넷 연결을 확인하거나 잠시 후 다시 시도해주세요.")
+        return 1
+    today = date.today().isoformat()
+    count = save_theme_map(today, theme_map)
+    total_codes = sum(len(v) for v in theme_map.values())
+    print(f"✓ {today} 기준 테마 {count}개 / 종목 매핑 {total_codes}건을 저장했어요.")
+    print("  이제 recommend·web에서 '테마 동조' 점수(15점)가 채워져요.")
+    return 0
+
+
 def cmd_init_db(_args) -> int:
     from jongga.db import init_db
 
@@ -238,6 +262,9 @@ def main(argv=None) -> None:
     p_mat.add_argument("code", help="종목코드 6자리 (예: 005930)")
     p_mat.add_argument("name", help="종목명 (예: 삼성전자)")
     p_mat.set_defaults(func=cmd_material)
+
+    p_theme = sub.add_parser("collect-themes", help="네이버 테마-종목 매핑 수집 (하루 1회 권장)")
+    p_theme.set_defaults(func=cmd_collect_themes)
 
     p_db = sub.add_parser("init-db", help="DB 파일 생성")
     p_db.set_defaults(func=cmd_init_db)

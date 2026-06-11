@@ -41,6 +41,14 @@ CREATE TABLE IF NOT EXISTS settings_override (
     updated_at TEXT
 );
 
+CREATE TABLE IF NOT EXISTS theme_snapshot (
+    trade_date TEXT NOT NULL,
+    theme      TEXT NOT NULL,
+    codes      TEXT NOT NULL,           -- JSON 배열 [종목코드...]
+    collected_at TEXT,
+    PRIMARY KEY (trade_date, theme)
+);
+
 CREATE TABLE IF NOT EXISTS screening_result (
     trade_date    TEXT NOT NULL,
     code          TEXT NOT NULL,
@@ -89,6 +97,48 @@ def save_universe(trade_date: str, rows: list[dict]) -> int:
             (now, f"{trade_date} {len(rows)}종목"),
         )
     return len(rows)
+
+
+def save_theme_map(trade_date: str, theme_map: dict) -> int:
+    """테마 매핑을 일자별로 저장 (과거 조회 시 그날의 테마 재현용)"""
+    import json
+    init_db()
+    now = datetime.now().isoformat(timespec="seconds")
+    with connect() as conn:
+        conn.execute("DELETE FROM theme_snapshot WHERE trade_date = ?", (trade_date,))
+        conn.executemany(
+            "INSERT INTO theme_snapshot (trade_date, theme, codes, collected_at) VALUES (?, ?, ?, ?)",
+            [(trade_date, theme, json.dumps(codes, ensure_ascii=False), now)
+             for theme, codes in theme_map.items()],
+        )
+    return len(theme_map)
+
+
+def load_theme_map(trade_date: str) -> dict:
+    """해당 일자의 테마 매핑. 없으면 빈 dict"""
+    import json
+    if not DB_PATH.exists():
+        return {}
+    with connect() as conn:
+        try:
+            rows = conn.execute(
+                "SELECT theme, codes FROM theme_snapshot WHERE trade_date = ?", (trade_date,)
+            ).fetchall()
+        except sqlite3.OperationalError:
+            return {}
+    return {r["theme"]: json.loads(r["codes"]) for r in rows}
+
+
+def latest_theme_date() -> str | None:
+    """가장 최근 테마 수집 일자 (당일 수집 전 임시로 직전 데이터를 쓰기 위함)"""
+    if not DB_PATH.exists():
+        return None
+    with connect() as conn:
+        try:
+            row = conn.execute("SELECT MAX(trade_date) AS d FROM theme_snapshot").fetchone()
+        except sqlite3.OperationalError:
+            return None
+    return row["d"] if row else None
 
 
 def save_screening(result) -> int:
