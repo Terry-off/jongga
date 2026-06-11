@@ -23,10 +23,24 @@
   <form method="post" action="/scan">
     <button class="px-3 py-1.5 rounded-lg bg-slate-900 text-white text-xs font-semibold hover:bg-slate-700">🔄 다시 스캔</button>
   </form>
+  <a href="/journal" class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-semibold hover:bg-slate-100">📒 일지</a>
   <a href="/settings" class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-semibold hover:bg-slate-100">⚙️ 설정</a>
 {% endblock %}
 
 {% block content %}
+{% if killswitch and killswitch.active %}
+  <section class="rounded-2xl border-2 border-red-300 bg-red-50 p-5 mb-5">
+    <p class="font-extrabold text-red-700">🛑 킬스위치 발동 — 오늘은 시스템이 매매를 막았어요</p>
+    <ul class="mt-1.5 text-sm text-red-800 space-y-1">
+      {% for r in killswitch.reasons %}<li>· {{ r }}</li>{% endfor %}
+    </ul>
+    <p class="mt-2 text-xs text-red-600">아래 추천은 기록용으로만 보세요. <a href="/journal" class="underline font-semibold">매매일지에서 자세히 →</a></p>
+  </section>
+{% elif killswitch and killswitch.cautions %}
+  <div class="rounded-xl border border-amber-200 bg-amber-50 p-3 mb-5 text-sm text-amber-800 font-semibold">
+    ⚠️ {{ killswitch.cautions[0] }} <a href="/journal" class="underline">일지 보기</a>
+  </div>
+{% endif %}
 {% if error %}
   <div class="rounded-2xl border border-red-200 bg-red-50 p-4 mb-5 text-sm text-red-900">
     <p class="font-bold mb-1">데이터를 가져오지 못했어요</p>

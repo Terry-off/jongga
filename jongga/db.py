@@ -19,6 +19,30 @@ CREATE TABLE IF NOT EXISTS universe_snapshot (
     PRIMARY KEY (trade_date, code)
 );
 
+CREATE TABLE IF NOT EXISTS trade_journal (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    trade_date     TEXT NOT NULL,       -- 매수일 YYYY-MM-DD
+    code           TEXT,
+    name           TEXT,
+    score_pct      REAL,                -- 매수 당시 점수
+    material_grade TEXT,
+    buy_price      REAL,
+    quantity       INTEGER,
+    amount         INTEGER,             -- 매수금액(원)
+    one_r          INTEGER,             -- 기록 시점의 1R(원) — R 환산 기준 고정
+    after_hours    TEXT,                -- 시간외 체결 메모
+    exit_date      TEXT,
+    exit_price     REAL,
+    pnl_amount     INTEGER,
+    pnl_r          REAL,
+    rule_violation INTEGER DEFAULT 0,   -- 규칙 위반 여부 (수익이어도 위반은 위반)
+    violation_note TEXT,
+    lesson         TEXT,                -- 한 줄 교훈
+    status         TEXT DEFAULT 'open', -- open(보유 중) / closed(청산)
+    created_at     TEXT,
+    updated_at     TEXT
+);
+
 CREATE TABLE IF NOT EXISTS collect_log (
     id      INTEGER PRIMARY KEY AUTOINCREMENT,
     run_at  TEXT NOT NULL,

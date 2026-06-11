@@ -209,6 +209,36 @@ def cmd_web(args) -> int:
     return 0
 
 
+def cmd_journal(_args) -> int:
+    from jongga.journal import killswitch, report, store
+    from jongga.settings import cfg
+
+    entries = store.list_entries()
+    ks = killswitch.evaluate(entries, cfg)
+    print("── 킬스위치 상태 ──")
+    if ks.active:
+        print("🛑 발동 — 오늘은 매매 금지예요")
+        for r in ks.reasons:
+            print(f"   · {r}")
+    else:
+        print("✓ 정상 (하루 -2R · 주 -4R · 월 -8R · 연속 손절 · 규칙 위반 감시 중)")
+        for c in ks.cautions:
+            print(f"   ⚠️ {c}")
+
+    rep = report.compute(entries, cfg)
+    print("\n── 검증 리포트 ──")
+    if rep["closed"] == 0:
+        print("마감된 매매가 아직 없어요. 웹 화면(📒 일지)에서 기록을 시작하세요.")
+        return 0
+    print(f"마감 {rep['closed']}회 (보유 중 {rep['open']}건) · 누적 {rep['total_r']:+.1f}R")
+    print(f"{'✅' if rep['checks']['compliance'] else '❌'} 규칙 준수율 {rep['compliance']}% (기준 95%)")
+    print(f"{'✅' if rep['checks']['edge'] else '❌'} 승률 {rep['win_rate']}% / 기대값 {rep['expectancy_r']:+.2f}R")
+    print(f"{'✅' if rep['checks']['loss_control'] else '❌'} 평균 손실 {rep['avg_loss_r']}R (1R 이내), 최대 {rep['max_loss_r']}R")
+    if not rep["enough_data"]:
+        print(f"(판정까지 최소 {rep['min_trades']}회 필요 — {rep['min_trades'] - rep['closed']}회 남음)")
+    return 0
+
+
 def cmd_collect(args) -> int:
     from jongga.collector import collect_day
 
@@ -307,6 +337,9 @@ def main(argv=None) -> None:
     p_dates = sub.add_parser("dates", help="저장된(과거 조회 가능한) 거래일 목록")
     p_dates.set_defaults(func=cmd_dates)
 
+    p_journal = sub.add_parser("journal", help="매매일지 — 킬스위치 상태·검증 리포트 요약")
+    p_journal.set_defaults(func=cmd_journal)
+
     p_theme = sub.add_parser("collect-themes", help="네이버 테마-종목 매핑 수집 (하루 1회 권장)")
     p_theme.set_defaults(func=cmd_collect_themes)
 
@@ -316,10 +349,12 @@ def main(argv=None) -> None:
     args = parser.parse_args(argv)
     try:
         sys.exit(args.func(args))
+    except SystemExit:
+        raise
+    except RuntimeError as exc:
+        # KisApiError 포함 — 사용자 안내 메시지만 출력 (traceback 없이)
+        print(f"\n{exc}", file=sys.stderr)
+        sys.exit(1)
     except Exception as exc:
-        from jongga.kis.client import KisApiError
-
-        if isinstance(exc, (KisApiError, SystemExit)):
-            raise
         print(f"\n오류가 발생했습니다: {exc.__class__.__name__}: {exc}", file=sys.stderr)
         sys.exit(1)

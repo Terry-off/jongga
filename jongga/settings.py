@@ -124,8 +124,8 @@ def require_kis_keys() -> tuple[str, str]:
     app_key = env("KIS_APP_KEY")
     app_secret = env("KIS_APP_SECRET")
     if not app_key or not app_secret:
-        raise SystemExit(
-            "한국투자증권 API 키가 없습니다.\n"
+        raise RuntimeError(
+            "한국투자증권 API 키가 없습니다. "
             ".env.example을 복사해 .env 파일을 만들고 KIS_APP_KEY, KIS_APP_SECRET을 넣어주세요."
         )
     return app_key, app_secret

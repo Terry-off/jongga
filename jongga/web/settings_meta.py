@@ -66,6 +66,16 @@ GROUPS: list[tuple[str, list[Item]]] = [
         Item("universe.min_change_rate", "상승률 상위 편입 컷", "%",
              "이 등락률 이상인 종목을 상승률 경로로 후보에 추가", step=0.5, min=0),
     ]),
+    ("🛑 킬스위치 (제1방어선)", [
+        Item("killswitch.daily_loss_r", "하루 손실 한도", "R",
+             "하루 손실 합계가 이만큼이면 당일 추가 매매 금지 — 복구 매매를 차단해요", step=0.5, min=0.5, max=10),
+        Item("killswitch.weekly_loss_r", "한 주 손실 한도", "R",
+             "이번 주 손실이 이만큼이면 그 주 매매 종료, 주말 복기", step=0.5, min=1, max=20),
+        Item("killswitch.monthly_loss_r", "한 달 손실 한도", "R",
+             "한 달 손실이 이만큼이면 실전 중단, 소액 검증 모드로 복귀", step=0.5, min=2, max=40),
+        Item("killswitch.consecutive_losses", "연속 손절 휴식 기준", "회",
+             "연속으로 이만큼 손절하면 1거래일 휴식 + 다음 비중 절반", step=1, min=2, max=10),
+    ]),
     ("🛡️ 위험 관리", [
         Item("risk_stock.exclude_warning", "거래소 경보 종목 제외", "",
              "투자주의·경고·위험·단기과열·관리종목을 무조건 탈락시켜요 (강력 권장: 켜기)"),

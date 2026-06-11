@@ -86,12 +86,21 @@ def create_app(demo: bool = False) -> FastAPI:
                 state["result"] = None
         result = state["result"]
         from jongga.db import collected_dates
+        killswitch = None
+        if not state["demo"]:
+            try:
+                from jongga.journal import killswitch as ks_mod
+                from jongga.journal import store as journal_store
+                killswitch = ks_mod.evaluate(journal_store.list_entries(), settings.cfg)
+            except Exception:
+                killswitch = None
         return templates.TemplateResponse(request, "index.html", {
             "result": result,
             "demo": state["demo"],
             "ran_at": state["ran_at"],
             "error": state["error"],
             "viewing": state["viewing"],
+            "killswitch": killswitch,
             "past_dates": [] if state["demo"] else collected_dates()[:60],
             "signal": SIGNAL_STYLE.get(result.signal.color) if result else None,
             "cards": _cards(result) if result else [],
@@ -174,5 +183,67 @@ def create_app(demo: bool = False) -> FastAPI:
         settings.clear_overrides()
         state["result"] = None
         return RedirectResponse("/settings?reset=1", status_code=303)
+
+    # ─── 매매일지·킬스위치·검증 리포트 (설계서 제1부·제9부) ───
+
+    @app.get("/journal", response_class=HTMLResponse)
+    def journal_page(request: Request, saved: int = 0, done: int = 0, deleted: int = 0, err: str = ""):
+        from datetime import date as _date
+
+        from jongga.journal import killswitch as ks_mod
+        from jongga.journal import report, store
+        entries = store.list_entries()
+        return templates.TemplateResponse(request, "journal.html", {
+            "open_entries": [e for e in entries if e["status"] == "open"],
+            "closed_entries": [e for e in entries if e["status"] == "closed"],
+            "ks": ks_mod.evaluate(entries, settings.cfg),
+            "rep": report.compute(entries, settings.cfg),
+            "candidates": store.recent_screening_candidates(),
+            "one_r": store.current_one_r(),
+            "today": _date.today().isoformat(),
+            "saved": saved, "done": done, "deleted": deleted, "err": err,
+        })
+
+    @app.post("/journal/add")
+    async def journal_add(request: Request):
+        from jongga.journal import store
+        form = await request.form()
+        try:
+            store.add_entry(
+                trade_date=str(form.get("trade_date") or "").strip(),
+                code=str(form.get("code") or "").strip(),
+                name=str(form.get("name") or "").strip(),
+                buy_price=float(form.get("buy_price")),
+                quantity=int(form.get("quantity")),
+                score_pct=float(form.get("score_pct")) if form.get("score_pct") else None,
+                material_grade=str(form.get("material_grade") or "").strip(),
+                after_hours=str(form.get("after_hours") or "").strip(),
+            )
+        except (TypeError, ValueError):
+            return RedirectResponse("/journal?err=add", status_code=303)
+        return RedirectResponse("/journal?saved=1", status_code=303)
+
+    @app.post("/journal/{entry_id}/close")
+    async def journal_close(entry_id: int, request: Request):
+        from jongga.journal import store
+        form = await request.form()
+        try:
+            store.close_entry(
+                entry_id,
+                exit_date=str(form.get("exit_date") or "").strip(),
+                exit_price=float(form.get("exit_price")),
+                rule_violation=bool(form.get("rule_violation")),
+                violation_note=str(form.get("violation_note") or "").strip(),
+                lesson=str(form.get("lesson") or "").strip(),
+            )
+        except (TypeError, ValueError):
+            return RedirectResponse("/journal?err=close", status_code=303)
+        return RedirectResponse("/journal?done=1", status_code=303)
+
+    @app.post("/journal/{entry_id}/delete")
+    def journal_delete(entry_id: int):
+        from jongga.journal import store
+        store.delete_entry(entry_id)
+        return RedirectResponse("/journal?deleted=1", status_code=303)
 
     return app

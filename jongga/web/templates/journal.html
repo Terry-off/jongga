@@ -1,0 +1,175 @@
+{% extends "base.html" %}
+{% block title %}매매일지 — 종가매매 추천{% endblock %}
+
+{% block nav %}
+  <a href="/" class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-semibold hover:bg-slate-100">← 추천 화면</a>
+  <a href="/settings" class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-semibold hover:bg-slate-100">⚙️ 설정</a>
+{% endblock %}
+
+{% block content %}
+  <div class="mb-5">
+    <h1 class="text-lg font-bold">📒 매매일지 · 킬스위치</h1>
+    <p class="text-sm text-slate-500 mt-1">
+      복기의 질문은 하나예요 — <b>"오늘 나는 규칙을 지켰는가?"</b>
+      규칙을 지킨 손실은 비용, 규칙을 어긴 수익은 부채예요.
+    </p>
+  </div>
+
+  {% if saved %}<div class="rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm p-3 mb-4 font-semibold">✓ 매수 기록을 저장했어요. 청산하면 결과를 입력해주세요.</div>{% endif %}
+  {% if done %}<div class="rounded-xl bg-blue-50 border border-blue-200 text-blue-800 text-sm p-3 mb-4 font-semibold">✓ 청산 기록 완료. 킬스위치와 검증 리포트에 반영됐어요.</div>{% endif %}
+  {% if deleted %}<div class="rounded-xl bg-slate-100 border border-slate-200 text-slate-600 text-sm p-3 mb-4 font-semibold">기록을 삭제했어요.</div>{% endif %}
+  {% if err %}<div class="rounded-xl bg-red-50 border border-red-200 text-red-800 text-sm p-3 mb-4 font-semibold">입력값을 확인해주세요 — 가격·수량은 숫자여야 해요.</div>{% endif %}
+
+  {# ─── 킬스위치 상태 ─── #}
+  {% if ks.active %}
+    <section class="rounded-2xl border-2 border-red-300 bg-red-50 p-5 mb-4">
+      <p class="font-extrabold text-red-700 text-lg">🛑 킬스위치 발동 — 오늘은 시스템이 매매를 막았어요</p>
+      <ul class="mt-2 text-sm text-red-800 space-y-1.5">
+        {% for r in ks.reasons %}<li>· {{ r }}</li>{% endfor %}
+      </ul>
+      <p class="mt-3 text-xs text-red-600 font-semibold">시장보다 나를 먼저 멈추는 게 이 시스템의 마지막 방어선이에요.</p>
+    </section>
+  {% elif ks.cautions %}
+    <section class="rounded-2xl border border-amber-200 bg-amber-50 p-4 mb-4">
+      <p class="font-bold text-amber-800">⚠️ 주의 제한이 걸려 있어요</p>
+      <ul class="mt-1 text-sm text-amber-800">{% for c in ks.cautions %}<li>· {{ c }}</li>{% endfor %}</ul>
+    </section>
+  {% else %}
+    <section class="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 mb-4">
+      <p class="font-bold text-emerald-800 text-sm">✓ 킬스위치 정상 — 매매 가능한 상태예요 (하루 -2R · 주 -4R · 월 -8R · 3연속 손절 · 규칙 위반을 자동 감시 중)</p>
+    </section>
+  {% endif %}
+
+  {# ─── 검증 리포트 ─── #}
+  <section class="bg-white rounded-2xl border border-slate-100 p-5 mb-4">
+    <h2 class="font-bold mb-1">📊 검증 리포트 <span class="text-xs font-normal text-slate-400">시스템은 검증 전까지 가설이에요</span></h2>
+    {% if rep.closed == 0 %}
+      <p class="text-sm text-slate-500 mt-2">아직 마감된 매매가 없어요. 기록이 쌓이면 규칙 준수율·승률·기대값이 여기 표시돼요.
+        (판정에는 최소 {{ rep.min_trades }}회가 필요해요)</p>
+    {% else %}
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3 text-center">
+        <div class="rounded-xl bg-slate-50 p-3"><p class="text-xs text-slate-400">마감 매매</p>
+          <p class="text-xl font-extrabold">{{ rep.closed }}회</p></div>
+        <div class="rounded-xl bg-slate-50 p-3"><p class="text-xs text-slate-400">누적 손익</p>
+          <p class="text-xl font-extrabold {{ 'text-red-500' if rep.total_r >= 0 else 'text-blue-500' }}">{{ '%+.1f'|format(rep.total_r) }}R</p></div>
+        <div class="rounded-xl bg-slate-50 p-3"><p class="text-xs text-slate-400">승률</p>
+          <p class="text-xl font-extrabold">{{ rep.win_rate }}%</p></div>
+        <div class="rounded-xl bg-slate-50 p-3"><p class="text-xs text-slate-400">기대값</p>
+          <p class="text-xl font-extrabold">{{ '%+.2f'|format(rep.expectancy_r) }}R</p></div>
+      </div>
+      <div class="mt-4 space-y-1.5 text-sm">
+        <p>{{ '✅' if rep.checks.compliance else '❌' }} 규칙 준수율 <b>{{ rep.compliance }}%</b> (기준 95% — 수익률보다 먼저 봐요{% if rep.violations %}, 위반 {{ rep.violations }}건{% endif %})</p>
+        <p>{{ '✅' if rep.checks.edge else '❌' }} 승률 {{ rep.win_rate }}% 또는 기대값 양수 (평균 수익 +{{ rep.avg_win_r }}R / 평균 손실 -{{ rep.avg_loss_r }}R)</p>
+        <p>{{ '✅' if rep.checks.loss_control else '❌' }} 평균 손실 1R 이내 통제 (최대 손실 {{ rep.max_loss_r }}R{% if rep.losses_over_2r %}, <b class="text-red-600">2R 초과 손실 {{ rep.losses_over_2r }}건 — 원인 복기 필수</b>{% endif %})</p>
+      </div>
+      <p class="mt-3 text-xs {{ 'text-emerald-600 font-bold' if rep.all_pass and rep.enough_data else 'text-slate-400' }}">
+        {% if not rep.enough_data %}판정까지 {{ rep.min_trades - rep.closed }}회 더 필요해요 (최소 {{ rep.min_trades }}회).
+        {% elif rep.all_pass %}🎉 3개 기준을 모두 충족했어요 — 설계서 제9부의 다음 단계(비중 상향) 검토 조건이에요.
+        {% else %}기준 미충족 — 비중을 늘리지 말고 반복되는 손실 패턴을 찾아 베토 조건에 추가하세요.{% endif %}
+      </p>
+    {% endif %}
+  </section>
+
+  {# ─── 보유 중 (청산 입력) ─── #}
+  {% if open_entries %}
+  <section class="bg-white rounded-2xl border border-slate-100 p-5 mb-4">
+    <h2 class="font-bold mb-3">⏳ 보유 중 — 청산하면 바로 기록하세요 (9:05가 이 매매의 마감 시각이에요)</h2>
+    {% for e in open_entries %}
+    <details class="border border-slate-100 rounded-xl p-3 mb-2">
+      <summary class="cursor-pointer flex justify-between items-center select-none">
+        <span class="text-sm font-semibold">{{ e.name }} <span class="text-xs text-slate-400">{{ e.code }} · {{ e.trade_date }} 매수</span></span>
+        <span class="text-xs text-slate-500">{{ '{:,}'.format(e.buy_price|int) }}원 × {{ e.quantity }}주</span>
+      </summary>
+      <form method="post" action="/journal/{{ e.id }}/close" class="mt-3 grid grid-cols-2 gap-2 text-sm">
+        <label class="text-xs text-slate-500">청산일
+          <input type="date" name="exit_date" value="{{ today }}" required class="w-full border border-slate-200 rounded-lg px-2 py-1.5"></label>
+        <label class="text-xs text-slate-500">청산가(원)
+          <input type="number" name="exit_price" step="1" required class="w-full border border-slate-200 rounded-lg px-2 py-1.5"></label>
+        <label class="col-span-2 text-xs text-slate-500">한 줄 교훈
+          <input type="text" name="lesson" placeholder="예: 동시호가에서 무너졌는데 2차 진입한 게 실수" class="w-full border border-slate-200 rounded-lg px-2 py-1.5"></label>
+        <label class="col-span-2 flex items-center gap-2 text-xs text-slate-600">
+          <input type="checkbox" name="rule_violation" value="1" class="w-4 h-4 accent-red-600">
+          규칙을 어긴 매매였어요 (예: 물타기, 9:05 초과 보유, 비중 초과 — 수익이어도 체크)</label>
+        <input type="text" name="violation_note" placeholder="위반 내용 (위반 시에만)" class="col-span-2 border border-slate-200 rounded-lg px-2 py-1.5 text-xs">
+        <button class="col-span-2 bg-slate-900 text-white rounded-lg py-2 font-semibold">청산 기록</button>
+      </form>
+    </details>
+    {% endfor %}
+  </section>
+  {% endif %}
+
+  {# ─── 새 매수 기록 ─── #}
+  <section class="bg-white rounded-2xl border border-slate-100 p-5 mb-4">
+    <h2 class="font-bold mb-1">✍️ 새 매수 기록</h2>
+    <p class="text-xs text-slate-400 mb-3">현재 1R(허용 손실) = {{ '{:,}'.format(one_r) }}원 — R 환산은 이 값으로 고정 저장돼요.</p>
+    {% if candidates %}
+    <label class="text-xs text-slate-500">최근 추천 후보에서 불러오기
+      <select id="cand" class="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm mb-2"
+              onchange="fillCand(this)">
+        <option value="">직접 입력</option>
+        {% for c in candidates %}
+        <option data-code="{{ c.code }}" data-name="{{ c.name }}" data-pct="{{ c.pct }}">
+          {{ c.trade_date }} · {{ c.name }} ({{ '%.1f'|format(c.pct) }}점)</option>
+        {% endfor %}
+      </select></label>
+    {% endif %}
+    <form method="post" action="/journal/add" class="grid grid-cols-2 gap-2 text-sm">
+      <label class="text-xs text-slate-500">매수일
+        <input type="date" name="trade_date" value="{{ today }}" required class="w-full border border-slate-200 rounded-lg px-2 py-1.5"></label>
+      <label class="text-xs text-slate-500">종목코드
+        <input type="text" name="code" id="f_code" placeholder="005930" class="w-full border border-slate-200 rounded-lg px-2 py-1.5"></label>
+      <label class="text-xs text-slate-500">종목명
+        <input type="text" name="name" id="f_name" required class="w-full border border-slate-200 rounded-lg px-2 py-1.5"></label>
+      <label class="text-xs text-slate-500">점수(선택)
+        <input type="number" name="score_pct" id="f_pct" step="0.1" class="w-full border border-slate-200 rounded-lg px-2 py-1.5"></label>
+      <label class="text-xs text-slate-500">매수가(원)
+        <input type="number" name="buy_price" step="1" required class="w-full border border-slate-200 rounded-lg px-2 py-1.5"></label>
+      <label class="text-xs text-slate-500">수량(주)
+        <input type="number" name="quantity" min="1" required class="w-full border border-slate-200 rounded-lg px-2 py-1.5"></label>
+      <label class="col-span-2 text-xs text-slate-500">시간외·메모 (선택)
+        <input type="text" name="after_hours" placeholder="예: 시간외 +1.2% 체결량 동반" class="w-full border border-slate-200 rounded-lg px-2 py-1.5"></label>
+      <input type="hidden" name="material_grade" id="f_grade" value="">
+      <button class="col-span-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg py-2.5 font-bold">매수 기록 저장</button>
+    </form>
+  </section>
+
+  {# ─── 마감 기록 ─── #}
+  {% if closed_entries %}
+  <section class="bg-white rounded-2xl border border-slate-100 p-5 mb-4">
+    <h2 class="font-bold mb-3">📚 마감 기록 <span class="text-xs font-normal text-slate-400">{{ closed_entries|length }}건</span></h2>
+    <div class="space-y-2">
+      {% for e in closed_entries %}
+      <div class="border border-slate-100 rounded-xl p-3 text-sm">
+        <div class="flex justify-between items-center">
+          <span class="font-semibold">{{ e.name }}
+            <span class="text-xs text-slate-400 font-normal">{{ e.trade_date }} → {{ e.exit_date }}</span>
+            {% if e.rule_violation %}<span class="ml-1 px-1.5 py-0.5 rounded bg-red-100 text-red-600 text-[10px] font-bold">규칙 위반</span>{% endif %}</span>
+          <span class="font-extrabold {{ 'text-red-500' if e.pnl_r >= 0 else 'text-blue-600' }}">{{ '%+.2f'|format(e.pnl_r) }}R</span>
+        </div>
+        <p class="text-xs text-slate-400 mt-1">
+          {{ '{:,}'.format(e.buy_price|int) }} → {{ '{:,}'.format(e.exit_price|int) }}원 × {{ e.quantity }}주
+          = {{ '{:,}'.format(e.pnl_amount) }}원
+          {% if e.violation_note %} · 위반: {{ e.violation_note }}{% endif %}</p>
+        {% if e.lesson %}<p class="text-xs text-slate-600 mt-1">💡 {{ e.lesson }}</p>{% endif %}
+        <form method="post" action="/journal/{{ e.id }}/delete" class="text-right"
+              onsubmit="return confirm('이 기록을 삭제할까요?')">
+          <button class="text-[10px] text-slate-300 hover:text-red-400">삭제</button>
+        </form>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+function fillCand(sel) {
+  const o = sel.options[sel.selectedIndex];
+  if (!o.dataset.code) return;
+  document.getElementById('f_code').value = o.dataset.code;
+  document.getElementById('f_name').value = o.dataset.name;
+  document.getElementById('f_pct').value = o.dataset.pct;
+}
+</script>
+{% endblock %}

@@ -49,6 +49,12 @@ risk_stock:
   exclude_warning: true        # 투자주의·경고·위험·단기과열·관리종목 제외
   cb_lookback_days: 30         # 최근 N일 내 유증·CB 공시 시 제외
 
+killswitch:                    # 설계서 제1부 — 시스템이 나를 강제로 멈추는 장치
+  daily_loss_r: 2.0            # 하루 손실 합계가 -2R → 당일 추가 매매 금지
+  weekly_loss_r: 4.0           # 한 주 손실 -4R → 그 주 매매 종료
+  monthly_loss_r: 8.0          # 한 달 손실 -8R → 실전 중단, 소액 검증 복귀
+  consecutive_losses: 3        # 연속 손절 N회 → 1거래일 휴식 + 다음 비중 절반
+
 calendar:
   friday_requires_a_grade: true # 금요일·연휴 전일은 A급 재료 + 85점만 절반 비중
 

@@ -33,6 +33,13 @@ def next_trading_day(d: date) -> date:
     return nxt
 
 
+def prev_trading_day(d: date) -> date:
+    prev = d - timedelta(days=1)
+    while is_holiday(prev):
+        prev -= timedelta(days=1)
+    return prev
+
+
 def events_for_next_session(d: date) -> list[str]:
     """오늘(d) 이후 다음 거래일까지 사이에 걸린 이벤트 — 베토 7 판정용"""
     end = next_trading_day(d)

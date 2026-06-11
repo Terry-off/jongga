@@ -39,16 +39,16 @@ def get_access_token(force: bool = False) -> str:
             timeout=10,
         )
     except requests.RequestException as exc:
-        raise SystemExit(
-            "한국투자증권 서버(openapi.koreainvestment.com:9443)에 연결할 수 없습니다.\n"
-            "- 인터넷 연결과 방화벽/네트워크 정책(9443 포트 허용 여부)을 확인해주세요.\n"
-            f"- 상세: {exc.__class__.__name__}"
+        raise RuntimeError(
+            "한국투자증권 서버(openapi.koreainvestment.com:9443)에 연결할 수 없습니다. "
+            "인터넷 연결과 방화벽/네트워크 정책(9443 포트 허용 여부)을 확인해주세요. "
+            f"(상세: {exc.__class__.__name__})"
         ) from exc
     body = resp.json()
     if resp.status_code != 200 or "access_token" not in body:
-        raise SystemExit(
-            "토큰 발급에 실패했습니다. .env의 앱키·시크릿이 실전투자용으로 올바른지 확인해주세요.\n"
-            f"응답: {body.get('error_code', resp.status_code)} {body.get('error_description', body)}"
+        raise RuntimeError(
+            "토큰 발급에 실패했습니다. .env의 앱키·시크릿이 실전투자용으로 올바른지 확인해주세요. "
+            f"(응답: {body.get('error_code', resp.status_code)} {body.get('error_description', body)})"
         )
 
     expires_at = datetime.now() + timedelta(seconds=int(body.get("expires_in", 86400)))
