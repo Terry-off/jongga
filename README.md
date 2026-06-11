@@ -67,6 +67,10 @@ python -m jongga web --demo
 |---|---|
 | `python -m jongga web [--demo] [--port 8765]` | **웹 대시보드** — 추천 카드·차트·필터 설정 화면 |
 | `python -m jongga recommend [--demo] [--save] [--top 40]` | 터미널 버전 추천 — 신호등·점수·이유·비중까지 |
+| `python -m jongga collect [--no-themes]` | **일일 스냅샷 수집** — 매일 18:10 자동 실행 권장 ([설정법](scripts/windows_scheduler.md)) |
+| `python -m jongga dates` | 저장된(과거 조회 가능한) 거래일 목록 |
+| `python -m jongga recommend --date 2026-06-10` | 저장된 과거 날짜를 그대로 재현 조회 |
+| `python -m jongga collect-themes` | 네이버 테마-종목 매핑만 따로 수집 |
 | `python -m jongga material 005930 삼성전자` | 종목 재료(뉴스·공시) 등급 즉석 확인 |
 | `python -m jongga smoke` | KIS API 연결 테스트 (토큰 + 삼성전자 현재가) |
 | `python -m jongga universe [--save] [--top 30]` | 오늘 돈이 몰린 종목 목록 |
@@ -100,6 +104,7 @@ jongga/
 - [x] **M1** KIS 연동 기반 + 유니버스 수집 CLI
 - [x] **M2** 베토 9개 + 채점 엔진 + 시장 신호등 + 추천 CLI
 - [x] **M3** 재료 엔진 (DART 공시 + 네이버 뉴스 자동 등급)
-- [x] **M4** 웹 대시보드 (카드 UI·차트·필터 설정 화면) ← 현재
-- [ ] **M5** 일일 자동 스냅샷 수집기 + 과거 조회
+- [x] **M3.5** 테마 동조·대장주 판별 (네이버 테마 수집)
+- [x] **M4** 웹 대시보드 (카드 UI·차트·필터 설정 화면)
+- [x] **M5** 일일 자동 스냅샷 수집기 + 과거 날짜 재현 조회 ← 현재
 - [ ] **M6** 매매일지 + 킬스위치 + 검증 리포트

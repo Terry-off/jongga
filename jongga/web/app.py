@@ -39,16 +39,28 @@ def create_app(demo: bool = False) -> FastAPI:
     templates.env.filters["eok"] = _eok
     templates.env.filters["comma"] = lambda v: f"{v:,}"
 
-    state = {"result": None, "ran_at": None, "error": None, "demo": demo}
+    state = {"result": None, "ran_at": None, "error": None, "demo": demo, "viewing": None}
 
-    def run_pipeline():
+    def run_pipeline(date_arg: str | None = None):
+        from datetime import date as _date
         if state["demo"]:
             from jongga.demo import DEMO_DATE
             from jongga.providers import DemoProvider
             state["result"] = pipeline.run(DemoProvider(), trade_date=DEMO_DATE)
+            state["viewing"] = None
+        elif date_arg and date_arg != _date.today().isoformat():
+            from jongga.providers import DBProvider
+            provider = DBProvider(date_arg)
+            if not provider.has_data():
+                raise RuntimeError(
+                    f"{date_arg}에 저장된 데이터가 없어요. 그날 수집(collect)이 돌지 않았다면 "
+                    "분봉·시간외는 복구할 수 없어요. 저장된 날짜만 조회할 수 있어요.")
+            state["result"] = pipeline.run(provider, trade_date=date_arg)
+            state["viewing"] = date_arg
         else:
             from jongga.providers import LiveProvider
             state["result"] = pipeline.run(LiveProvider())
+            state["viewing"] = None
         state["ran_at"] = datetime.now().strftime("%H:%M")
         state["error"] = None
 
@@ -64,18 +76,23 @@ def create_app(demo: bool = False) -> FastAPI:
         return cards
 
     @app.get("/", response_class=HTMLResponse)
-    def home(request: Request):
-        if state["result"] is None and state["error"] is None:
+    def home(request: Request, date: str | None = None):
+        # 날짜 파라미터가 바뀌었거나 첫 진입이면 다시 계산
+        if date != state["viewing"] or (state["result"] is None and state["error"] is None):
             try:
-                run_pipeline()
+                run_pipeline(date)
             except Exception as exc:
                 state["error"] = str(exc)
+                state["result"] = None
         result = state["result"]
+        from jongga.db import collected_dates
         return templates.TemplateResponse(request, "index.html", {
             "result": result,
             "demo": state["demo"],
             "ran_at": state["ran_at"],
             "error": state["error"],
+            "viewing": state["viewing"],
+            "past_dates": [] if state["demo"] else collected_dates()[:60],
             "signal": SIGNAL_STYLE.get(result.signal.color) if result else None,
             "cards": _cards(result) if result else [],
             "watch": [c for c in result.candidates if c.verdict == "watch"] if result else [],

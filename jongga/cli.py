@@ -123,23 +123,38 @@ def _render_day(result) -> None:
     print("\n⚠️  이 프로그램은 추천 도구일 뿐이에요. 최종 판단과 책임은 투자자 본인에게 있어요.")
 
 
+def _select_provider(demo: bool, date_arg: str | None):
+    """(provider, trade_date, banner) 결정 — demo / 과거(DB) / 오늘(실시간)"""
+    from datetime import date as _date
+
+    if demo:
+        from jongga.demo import DEMO_DATE
+        from jongga.providers import DemoProvider
+        return DemoProvider(), (date_arg or DEMO_DATE), \
+            "(시연 모드 — 내장된 '가상의 하루' 데이터로 판단 과정 전체를 보여드려요)\n"
+
+    today = _date.today().isoformat()
+    if date_arg and date_arg != today:
+        from jongga.providers import DBProvider
+        provider = DBProvider(date_arg)
+        if not provider.has_data():
+            raise SystemExit(
+                f"{date_arg}에 저장된 데이터가 없어요.\n"
+                "그날 18:10 수집(python -m jongga collect)이 돌지 않았다면 과거를 재현할 수 없어요 "
+                "(분봉·시간외는 지나가면 복구가 안 돼요). 저장된 날짜는 'python -m jongga dates'로 볼 수 있어요."
+            )
+        return provider, date_arg, f"(과거 조회 — {date_arg}에 저장해 둔 데이터를 그대로 재현해요)\n"
+
+    from jongga.providers import LiveProvider
+    return LiveProvider(), None, ""
+
+
 def cmd_recommend(args) -> int:
     from jongga.engine import pipeline
 
-    if args.demo:
-        from jongga.demo import DEMO_DATE
-        from jongga.providers import DemoProvider
-
-        provider = DemoProvider()
-        trade_date = args.date or DEMO_DATE
-        print("(시연 모드 — 내장된 '가상의 하루' 데이터로 판단 과정 전체를 보여드려요)\n")
-    else:
-        from jongga.providers import LiveProvider
-
-        provider = LiveProvider()
-        trade_date = args.date
-        if args.date:
-            print("(안내) 실시간 모드는 오늘 데이터 기준이에요 — 과거 날짜 재현은 M5에서 지원돼요.\n")
+    provider, trade_date, banner = _select_provider(args.demo, args.date)
+    if banner:
+        print(banner)
 
     result = pipeline.run(provider, trade_date=trade_date, top_n=args.top)
     _render_day(result)
@@ -191,6 +206,27 @@ def cmd_web(args) -> int:
     print("  끄려면 이 창에서 Ctrl+C")
     print("─" * 56)
     uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
+    return 0
+
+
+def cmd_collect(args) -> int:
+    from jongga.collector import collect_day
+
+    collect_day(with_themes=not args.no_themes, top_n=args.top)
+    return 0
+
+
+def cmd_dates(_args) -> int:
+    from jongga.db import collected_dates
+
+    dates = collected_dates()
+    if not dates:
+        print("아직 수집된 날짜가 없어요. 'python -m jongga collect'로 오늘 데이터를 저장해보세요.")
+        return 0
+    print(f"저장된 거래일 {len(dates)}개 (최신순):")
+    for d in dates[:60]:
+        print(f"  · {d}")
+    print("\n과거 조회:  python -m jongga recommend --date YYYY-MM-DD")
     return 0
 
 
@@ -262,6 +298,14 @@ def main(argv=None) -> None:
     p_mat.add_argument("code", help="종목코드 6자리 (예: 005930)")
     p_mat.add_argument("name", help="종목명 (예: 삼성전자)")
     p_mat.set_defaults(func=cmd_material)
+
+    p_col = sub.add_parser("collect", help="오늘 전체 스냅샷 수집·저장 (매일 18:10 자동 실행 권장)")
+    p_col.add_argument("--no-themes", action="store_true", help="테마 수집 생략 (빠르게)")
+    p_col.add_argument("--top", type=int, default=None, help="정밀 수집할 종목 수 (기본: 설정값)")
+    p_col.set_defaults(func=cmd_collect)
+
+    p_dates = sub.add_parser("dates", help="저장된(과거 조회 가능한) 거래일 목록")
+    p_dates.set_defaults(func=cmd_dates)
 
     p_theme = sub.add_parser("collect-themes", help="네이버 테마-종목 매핑 수집 (하루 1회 권장)")
     p_theme.set_defaults(func=cmd_collect_themes)

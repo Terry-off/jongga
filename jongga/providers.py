@@ -48,6 +48,53 @@ class DemoProvider:
         return self.day["materials"].get(code)
 
 
+class DBProvider:
+    """저장된 일자를 그대로 재현 — 과거 날짜 조회 (collector가 적재한 데이터)
+
+    수집되지 않은 항목은 빈 값을 돌려 '확인 불가'로 정직하게 처리한다.
+    """
+
+    def __init__(self, trade_date: str):
+        from jongga.db import (load_index_collect, load_stock_collect,
+                               load_theme_map, load_universe)
+        self.date = trade_date
+        self._universe = load_universe(trade_date)
+        self._stocks = load_stock_collect(trade_date)
+        self._index = load_index_collect(trade_date)
+        self._themes = load_theme_map(trade_date)
+        self._has_materials = any(v.get("materials") for v in self._stocks.values())
+
+    def has_data(self) -> bool:
+        return bool(self._universe)
+
+    def universe(self):
+        return self._universe
+
+    def snapshot(self, code):
+        return (self._stocks.get(code) or {}).get("snapshot") or {}
+
+    def daily(self, code):
+        return (self._stocks.get(code) or {}).get("daily") or []
+
+    def minutes(self, code):
+        return (self._stocks.get(code) or {}).get("minutes") or []
+
+    def investor(self, code):
+        return (self._stocks.get(code) or {}).get("investor") or []
+
+    def index(self):
+        return self._index
+
+    def theme_map(self):
+        return self._themes
+
+    def material_enabled(self):
+        return self._has_materials
+
+    def materials(self, code, name):
+        return (self._stocks.get(code) or {}).get("materials")
+
+
 class LiveProvider:
     """한국투자증권 API 실시간 — 당일 기준"""
 

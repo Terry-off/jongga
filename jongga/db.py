@@ -49,6 +49,24 @@ CREATE TABLE IF NOT EXISTS theme_snapshot (
     PRIMARY KEY (trade_date, theme)
 );
 
+CREATE TABLE IF NOT EXISTS stock_collect (
+    trade_date TEXT NOT NULL,
+    code       TEXT NOT NULL,
+    snapshot   TEXT,                    -- JSON: 현재가·시총·경보 플래그
+    daily      TEXT,                    -- JSON: 일봉 배열
+    minutes    TEXT,                    -- JSON: 당일 분봉 (지나가면 못 보는 데이터)
+    investor   TEXT,                    -- JSON: 수급
+    materials  TEXT,                    -- JSON: 재료 판정(등급·근거) 당시 스냅샷
+    collected_at TEXT,
+    PRIMARY KEY (trade_date, code)
+);
+
+CREATE TABLE IF NOT EXISTS index_collect (
+    trade_date TEXT PRIMARY KEY,
+    payload    TEXT,                    -- JSON: {KOSPI:{prev_close,minutes}, KOSDAQ:{...}}
+    collected_at TEXT
+);
+
 CREATE TABLE IF NOT EXISTS screening_result (
     trade_date    TEXT NOT NULL,
     code          TEXT NOT NULL,
@@ -97,6 +115,100 @@ def save_universe(trade_date: str, rows: list[dict]) -> int:
             (now, f"{trade_date} {len(rows)}종목"),
         )
     return len(rows)
+
+
+def load_universe(trade_date: str) -> list[dict]:
+    """저장된 일자의 유니버스 row 목록 (거래대금 내림차순). 없으면 빈 리스트"""
+    if not DB_PATH.exists():
+        return []
+    with connect() as conn:
+        try:
+            rows = conn.execute(
+                "SELECT code, name, market, price, change_rate, volume, trading_value, sources "
+                "FROM universe_snapshot WHERE trade_date = ? ORDER BY trading_value DESC",
+                (trade_date,),
+            ).fetchall()
+        except sqlite3.OperationalError:
+            return []
+    return [dict(r) for r in rows]
+
+
+def save_stock_collect(trade_date, code, snapshot, daily, minutes, investor, materials) -> None:
+    import json
+    init_db()
+    now = datetime.now().isoformat(timespec="seconds")
+    dump = lambda v: json.dumps(v, ensure_ascii=False) if v is not None else None
+    with connect() as conn:
+        conn.execute(
+            """INSERT INTO stock_collect
+               (trade_date, code, snapshot, daily, minutes, investor, materials, collected_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(trade_date, code) DO UPDATE SET
+                 snapshot=excluded.snapshot, daily=excluded.daily, minutes=excluded.minutes,
+                 investor=excluded.investor, materials=excluded.materials,
+                 collected_at=excluded.collected_at""",
+            (trade_date, code, dump(snapshot), dump(daily), dump(minutes),
+             dump(investor), dump(materials), now),
+        )
+
+
+def load_stock_collect(trade_date: str) -> dict:
+    """{code: {snapshot, daily, minutes, investor, materials}}"""
+    import json
+    if not DB_PATH.exists():
+        return {}
+    load = lambda v: json.loads(v) if v else None
+    with connect() as conn:
+        try:
+            rows = conn.execute(
+                "SELECT code, snapshot, daily, minutes, investor, materials "
+                "FROM stock_collect WHERE trade_date = ?", (trade_date,)
+            ).fetchall()
+        except sqlite3.OperationalError:
+            return {}
+    return {r["code"]: {"snapshot": load(r["snapshot"]), "daily": load(r["daily"]),
+                        "minutes": load(r["minutes"]), "investor": load(r["investor"]),
+                        "materials": load(r["materials"])} for r in rows}
+
+
+def save_index_collect(trade_date: str, index: dict) -> None:
+    import json
+    init_db()
+    now = datetime.now().isoformat(timespec="seconds")
+    with connect() as conn:
+        conn.execute(
+            "INSERT INTO index_collect (trade_date, payload, collected_at) VALUES (?, ?, ?) "
+            "ON CONFLICT(trade_date) DO UPDATE SET payload=excluded.payload, collected_at=excluded.collected_at",
+            (trade_date, json.dumps(index, ensure_ascii=False), now),
+        )
+
+
+def load_index_collect(trade_date: str) -> dict:
+    import json
+    if not DB_PATH.exists():
+        return {}
+    with connect() as conn:
+        try:
+            row = conn.execute(
+                "SELECT payload FROM index_collect WHERE trade_date = ?", (trade_date,)
+            ).fetchone()
+        except sqlite3.OperationalError:
+            return {}
+    return json.loads(row["payload"]) if row and row["payload"] else {}
+
+
+def collected_dates() -> list[str]:
+    """수집된 거래일 목록 (최신순) — 과거 조회 달력·보충 판단용"""
+    if not DB_PATH.exists():
+        return []
+    with connect() as conn:
+        try:
+            rows = conn.execute(
+                "SELECT DISTINCT trade_date FROM universe_snapshot ORDER BY trade_date DESC"
+            ).fetchall()
+        except sqlite3.OperationalError:
+            return []
+    return [r["trade_date"] for r in rows]
 
 
 def save_theme_map(trade_date: str, theme_map: dict) -> int:

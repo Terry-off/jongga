@@ -6,6 +6,20 @@
   {% else %}
     <span class="px-2.5 py-1 rounded-full bg-blue-100 text-blue-700 text-xs font-bold">실전</span>
   {% endif %}
+  {% if not demo %}
+    {% if viewing %}
+      <a href="/" class="px-2.5 py-1 rounded-full bg-violet-100 text-violet-700 text-xs font-bold">📅 {{ viewing }} (과거) · 오늘로</a>
+    {% endif %}
+    {% if past_dates %}
+      <form method="get" action="/" class="flex items-center gap-1">
+        <select name="date" onchange="this.form.submit()"
+                class="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white max-w-[8rem]">
+          <option value="">오늘</option>
+          {% for d in past_dates %}<option value="{{ d }}" {% if d == viewing %}selected{% endif %}>{{ d }}</option>{% endfor %}
+        </select>
+      </form>
+    {% endif %}
+  {% endif %}
   <form method="post" action="/scan">
     <button class="px-3 py-1.5 rounded-lg bg-slate-900 text-white text-xs font-semibold hover:bg-slate-700">🔄 다시 스캔</button>
   </form>
