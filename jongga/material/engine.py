@@ -18,8 +18,11 @@ def enabled() -> bool:
 
 
 class MaterialEngine:
-    def __init__(self, trade_date: datetime | None = None):
+    def __init__(self, trade_date: datetime | None = None, use_news: bool = True):
+        # use_news=False: 네이버 뉴스 검색은 최신 기사만 닿아 오래된 과거 날짜엔
+        # '재료 없음'과 '검색이 안 닿음'을 구분할 수 없다 → 공시(DART)만 사용
         self.trade_date = trade_date or datetime.now()
+        self.use_news = use_news
         self._corp_map: dict | None = None
         self._corp_map_failed = False
 
@@ -37,7 +40,7 @@ class MaterialEngine:
         news_grade = dart_grade = None
         checked = False
 
-        if env("NAVER_CLIENT_ID") and env("NAVER_CLIENT_SECRET"):
+        if self.use_news and env("NAVER_CLIENT_ID") and env("NAVER_CLIENT_SECRET"):
             try:
                 items = news.filter_for_trade_date(news.search_news(name), self.trade_date, name)
                 checked = True

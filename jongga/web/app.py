@@ -42,7 +42,7 @@ def create_app(demo: bool = False) -> FastAPI:
     import threading
 
     state = {"result": None, "ran_at": None, "error": None, "demo": demo, "viewing": None,
-             "scanning": False, "progress": "",
+             "scanning": False, "progress": "", "scan_target": None, "recon": False,
              "theme_collecting": False, "theme_progress": "", "theme_msg": ""}
     scan_lock = threading.Lock()
 
@@ -66,16 +66,24 @@ def create_app(demo: bool = False) -> FastAPI:
         state["ran_at"] = datetime.now().strftime("%H:%M")
         state["error"] = None
 
-    def _live_scan_worker():
-        # 실전 스캔은 종목당 KIS 호출이 많아 몇 분 걸린다 → 백그라운드에서 돌리고
+    def _scan_worker(date_arg: str | None):
+        # 실전/재구성 스캔은 종목당 호출이 많아 몇 분 걸린다 → 백그라운드에서 돌리고
         # 화면은 진행상황을 보여주며 자동 새로고침한다
-        from jongga.providers import LiveProvider
         def on_progress(done, total, label):
             state["progress"] = f"{done}/{total} · {label}" if total else label
         try:
-            result = pipeline.run(LiveProvider(), progress=on_progress)
+            if date_arg:
+                from jongga.providers import HistoricalProvider
+                result = pipeline.run(HistoricalProvider(date_arg), trade_date=date_arg,
+                                      progress=on_progress)
+                state["viewing"] = date_arg
+                state["recon"] = True
+            else:
+                from jongga.providers import LiveProvider
+                result = pipeline.run(LiveProvider(), progress=on_progress)
+                state["viewing"] = None
+                state["recon"] = False
             state["result"] = result
-            state["viewing"] = None
             state["ran_at"] = datetime.now().strftime("%H:%M")
             state["error"] = None
         except Exception as exc:
@@ -84,14 +92,15 @@ def create_app(demo: bool = False) -> FastAPI:
         finally:
             state["scanning"] = False
 
-    def start_live_scan():
+    def start_scan(date_arg: str | None = None):
         with scan_lock:
             if state["scanning"]:
                 return
             state["scanning"] = True
+            state["scan_target"] = date_arg
             state["progress"] = "준비 중..."
             state["error"] = None
-            threading.Thread(target=_live_scan_worker, daemon=True).start()
+            threading.Thread(target=_scan_worker, args=(date_arg,), daemon=True).start()
 
     def _theme_collect_worker():
         from datetime import date as _date
@@ -143,19 +152,26 @@ def create_app(demo: bool = False) -> FastAPI:
                 except Exception as exc:
                     state["error"] = str(exc)
         elif date and date != today:
-            # 과거 조회는 로컬 DB라 즉시 끝난다
-            if date != state["viewing"]:
-                try:
-                    load_past(date)
-                except Exception as exc:
-                    state["error"] = str(exc)
-                    state["result"] = None
+            if date != state["viewing"] and not state["scanning"]:
+                from jongga.providers import DBProvider
+                provider = DBProvider(date)
+                if provider.has_data():
+                    # 그날 저장본이 있으면 즉시 완전 재현
+                    try:
+                        load_past(date)
+                        state["recon"] = False
+                    except Exception as exc:
+                        state["error"] = str(exc)
+                        state["result"] = None
+                elif state["error"] is None:
+                    # 저장본이 없으면 KRX·KIS로 재구성 (몇 분 — 백그라운드)
+                    start_scan(date)
         else:
             # 오늘(실전)은 느리므로 백그라운드 스캔 + 진행 화면
-            if state["viewing"] is not None:
+            if state["viewing"] is not None and not state["scanning"]:
                 state["result"], state["viewing"] = None, None
             if state["result"] is None and not state["scanning"] and state["error"] is None:
-                start_live_scan()
+                start_scan()
         result = state["result"]
         from jongga.db import collected_dates
         killswitch = None
@@ -175,6 +191,9 @@ def create_app(demo: bool = False) -> FastAPI:
             "killswitch": killswitch,
             "scanning": state["scanning"],
             "progress": state["progress"],
+            "scan_target": state["scan_target"],
+            "recon": state["recon"],
+            "today": _date.today().isoformat(),
             "theme_banner": "" if state["demo"] else _theme_banner(),
             "theme_collecting": state["theme_collecting"],
             "theme_progress": state["theme_progress"],
@@ -194,9 +213,12 @@ def create_app(demo: bool = False) -> FastAPI:
                 state["error"] = str(exc)
                 state["result"] = None
         else:
+            target = state["viewing"]  # 과거 화면에서 누르면 그 날짜를 다시 계산
             state["result"], state["viewing"], state["error"] = None, None, None
             state["theme_msg"] = ""
-            start_live_scan()
+            start_scan(target)
+            if target:
+                return RedirectResponse(f"/?date={target}", status_code=303)
         return RedirectResponse("/", status_code=303)
 
     @app.post("/themes/collect")

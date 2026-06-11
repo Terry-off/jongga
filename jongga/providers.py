@@ -95,6 +95,101 @@ class DBProvider:
         return (self._stocks.get(code) or {}).get("materials")
 
 
+class HistoricalProvider:
+    """저장본이 없는 과거 날짜를 API로 '재구성'한다 — 사용자가 아무 날짜나 조회 가능하게
+
+    그날 기준으로 다시 만들 수 있는 것: 유니버스(KRX 전종목 시세)·일봉·수급(KIS)·
+    공시(DART)·테마(그날 수집분이 있으면). 분봉은 KIS 제공 범위(최근 영업일) 안에서만.
+    복구 불가능한 것(거래소 경보 이력·지수 분봉·시간외)은 '확인 불가'로 정직하게 처리.
+    """
+
+    NEWS_RELIABLE_DAYS = 3  # 이보다 오래된 날짜는 뉴스 검색이 안 닿음 → 공시만 사용
+
+    def __init__(self, trade_date: str):
+        from jongga.kis.client import KisClient
+        self.date = trade_date                       # YYYY-MM-DD
+        self.ymd = trade_date.replace("-", "")
+        self.client = KisClient()
+        self._universe: list | None = None
+        self._krx: dict = {}
+        self._material_engine = None
+
+    def _days_ago(self) -> int:
+        from datetime import date as _date
+        return (_date.today() - _date.fromisoformat(self.date)).days
+
+    def universe(self):
+        if self._universe is None:
+            from jongga import krx
+            from jongga.settings import cfg
+            rows = krx.fetch_day(self.ymd)
+            if not rows:
+                raise RuntimeError(
+                    f"{self.date}의 시장 데이터를 받지 못했어요 — 휴장일(주말·공휴일)이거나 "
+                    "KRX 연결 문제예요. 다른 거래일을 선택해주세요.")
+            self._krx = {r["code"]: r for r in rows}
+            self._universe = krx.build_universe(rows, cfg)
+        return self._universe
+
+    def snapshot(self, code):
+        # 경보·과열 플래그는 과거 이력 조회가 불가 → 비워서 '확인 불가' (재구성의 한계)
+        r = self._krx.get(code, {})
+        return {"code": code, "price": r.get("price", 0), "market": r.get("market", ""),
+                "trading_value": r.get("trading_value", 0),
+                "market_cap_eok": r.get("market_cap_eok", 0)}
+
+    def daily(self, code):
+        from datetime import date as _date
+        from datetime import timedelta
+        from jongga.kis.api import daily_candles
+        end = _date.fromisoformat(self.date)
+        start = end - timedelta(days=150)
+        try:
+            return daily_candles(self.client, code, start.strftime("%Y%m%d"), self.ymd)
+        except Exception as exc:
+            print(f"(안내) {code} 일봉 조회 실패: {exc}", file=sys.stderr)
+            return []
+
+    def minutes(self, code):
+        from jongga.kis.api import minute_candles_on
+        try:
+            return minute_candles_on(self.client, code, self.ymd)
+        except Exception:
+            return []  # 제공 범위 밖 → '확인 불가'
+
+    def investor(self, code):
+        from jongga.kis.api import investor_trend
+        try:
+            rows = investor_trend(self.client, code)
+            return [r for r in rows if r["date"] <= self.ymd]
+        except Exception:
+            return []
+
+    def index(self):
+        return {}  # 과거 지수 분봉은 복구 불가 → 시장 항목은 이벤트만 반영
+
+    def theme_map(self):
+        from jongga.db import load_theme_map
+        return load_theme_map(self.date)
+
+    def material_enabled(self):
+        from jongga.material.engine import enabled
+        return enabled()
+
+    def materials(self, code, name):
+        from datetime import datetime as _dt
+        from jongga.material.engine import MaterialEngine
+        old = self._days_ago() > self.NEWS_RELIABLE_DAYS
+        if self._material_engine is None:
+            self._material_engine = MaterialEngine(
+                trade_date=_dt.fromisoformat(self.date + "T15:30"), use_news=not old)
+        res = self._material_engine.evaluate(code, name)
+        if old and res.get("checked") and res.get("grade") is None:
+            # 공시만 확인한 상태에서 '없음' 판정은 과하다 → 확인 불가로 완화 (베토 1 방지)
+            res["checked"] = False
+        return res
+
+
 class LiveProvider:
     """한국투자증권 API 실시간 — 당일 기준"""
 

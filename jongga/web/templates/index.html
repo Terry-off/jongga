@@ -12,17 +12,13 @@
   {% endif %}
   {% if not demo %}
     {% if viewing %}
-      <a href="/" class="px-2.5 py-1 rounded-full bg-violet-100 text-violet-700 text-xs font-bold">📅 {{ viewing }} (과거) · 오늘로</a>
+      <a href="/" class="px-2.5 py-1 rounded-full bg-violet-100 text-violet-700 text-xs font-bold">📅 {{ viewing }} · 오늘로 돌아가기</a>
     {% endif %}
-    {% if past_dates %}
-      <form method="get" action="/" class="flex items-center gap-1">
-        <select name="date" onchange="this.form.submit()"
-                class="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white max-w-[8rem]">
-          <option value="">오늘</option>
-          {% for d in past_dates %}<option value="{{ d }}" {% if d == viewing %}selected{% endif %}>{{ d }}</option>{% endfor %}
-        </select>
-      </form>
-    {% endif %}
+    <form method="get" action="/" class="flex items-center gap-1">
+      <input type="date" name="date" value="{{ viewing or '' }}" max="{{ today }}"
+             class="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white">
+      <button class="px-2.5 py-1.5 rounded-lg bg-violet-600 text-white text-xs font-bold hover:bg-violet-700">조회</button>
+    </form>
   {% endif %}
   <form method="post" action="/scan">
     <button class="px-3 py-1.5 rounded-lg bg-slate-900 text-white text-xs font-semibold hover:bg-slate-700">🔄 다시 스캔</button>
@@ -48,13 +44,21 @@
 {% if scanning %}
   <section class="bg-white rounded-2xl border border-slate-100 p-10 mb-5 text-center">
     <div class="mx-auto h-10 w-10 rounded-full border-4 border-slate-200 border-t-blue-600 animate-spin"></div>
-    <p class="font-bold mt-4">오늘 시장을 분석하고 있어요...</p>
+    <p class="font-bold mt-4">{% if scan_target %}{{ scan_target }} 시장을 다시 계산하고 있어요...{% else %}오늘 시장을 분석하고 있어요...{% endif %}</p>
     <p class="text-sm text-blue-600 font-semibold mt-1">{{ progress }}</p>
     <p class="text-xs text-slate-400 mt-3 leading-relaxed">
       종목마다 일봉·분봉·수급·뉴스·공시를 모아서 채점해요 — 보통 2~4분 걸려요.<br>
       이 화면은 2초마다 자동으로 새로고침되니 그대로 두시면 돼요.
     </p>
   </section>
+{% endif %}
+
+{% if result and viewing and recon %}
+  <div class="rounded-xl border border-violet-200 bg-violet-50 p-3 mb-5 text-xs text-violet-900 leading-relaxed">
+    🔎 <b>{{ viewing }} 재구성 조회예요.</b> 그날 저장본이 없어서 거래소(KRX)·증권사 데이터로 다시 계산했어요.
+    그날 기준으로 정확한 것: 거래대금·등락률·일봉·수급·공시 ·
+    되살릴 수 없는 것(경보 이력·지수 흐름, 오래된 날짜는 분봉·뉴스)은 '확인 불가'로 빼고 채점했어요.
+  </div>
 {% endif %}
 
 {% if error %}

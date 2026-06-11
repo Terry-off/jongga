@@ -195,6 +195,45 @@ def minute_candles(client: KisClient, code: str, start_hhmm: str = "0900") -> li
     return sorted((r for r in rows.values() if r["time"] >= start_hhmm), key=lambda r: r["time"])
 
 
+def minute_candles_on(client: KisClient, code: str, date_yyyymmdd: str,
+                      start_hhmm: str = "0900") -> list[dict]:
+    """과거 특정 일자의 분봉 — KIS 제공 범위가 최근 영업일 위주라 빈 결과면 '확인 불가' 처리"""
+    rows: dict[str, dict] = {}
+    hour = "153000"
+    for _ in range(16):
+        body = client.get(
+            "/uapi/domestic-stock/v1/quotations/inquire-time-dailychartprice",
+            tr_id="FHKST03010230",
+            params={
+                "FID_COND_MRKT_DIV_CODE": "J",
+                "FID_INPUT_ISCD": code,
+                "FID_INPUT_DATE_1": date_yyyymmdd,
+                "FID_INPUT_HOUR_1": hour,
+                "FID_PW_DATA_INCU_YN": "Y",
+                "FID_FAKE_TICK_INCU_YN": "N",
+            },
+        )
+        got = [r for r in body.get("output2", [])
+               if r.get("stck_cntg_hour") and r.get("stck_bsop_date") == date_yyyymmdd]
+        if not got:
+            break
+        for r in got:
+            t = r["stck_cntg_hour"][:4]
+            rows[t] = {
+                "time": t,
+                "open": _i(r.get("stck_oprc")),
+                "high": _i(r.get("stck_hgpr")),
+                "low": _i(r.get("stck_lwpr")),
+                "close": _i(r.get("stck_prpr")),
+                "volume": _i(r.get("cntg_vol")),
+            }
+        earliest = min(r["stck_cntg_hour"] for r in got)
+        if earliest[:4] <= start_hhmm:
+            break
+        hour = _prev_minute(earliest)
+    return sorted((r for r in rows.values() if r["time"] >= start_hhmm), key=lambda r: r["time"])
+
+
 def investor_trend(client: KisClient, code: str) -> list[dict]:
     """종목별 일별 수급(외국인·기관·개인 순매수량) — 당일분은 장중 미확정일 수 있다"""
     body = client.get(

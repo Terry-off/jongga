@@ -135,15 +135,13 @@ def _select_provider(demo: bool, date_arg: str | None):
 
     today = _date.today().isoformat()
     if date_arg and date_arg != today:
-        from jongga.providers import DBProvider
+        from jongga.providers import DBProvider, HistoricalProvider
         provider = DBProvider(date_arg)
-        if not provider.has_data():
-            raise SystemExit(
-                f"{date_arg}에 저장된 데이터가 없어요.\n"
-                "그날 18:10 수집(python -m jongga collect)이 돌지 않았다면 과거를 재현할 수 없어요 "
-                "(분봉·시간외는 지나가면 복구가 안 돼요). 저장된 날짜는 'python -m jongga dates'로 볼 수 있어요."
-            )
-        return provider, date_arg, f"(과거 조회 — {date_arg}에 저장해 둔 데이터를 그대로 재현해요)\n"
+        if provider.has_data():
+            return provider, date_arg, f"(과거 조회 — {date_arg}에 저장해 둔 데이터를 그대로 재현해요)\n"
+        return HistoricalProvider(date_arg), date_arg, (
+            f"(재구성 조회 — {date_arg} 저장본이 없어 거래소(KRX)·증권사 데이터로 다시 계산해요. "
+            "경보 이력·지수 흐름 등 복구 불가 항목은 '확인 불가' 처리, 몇 분 걸려요)\n")
 
     from jongga.providers import LiveProvider
     return LiveProvider(), None, ""
@@ -157,8 +155,8 @@ def cmd_recommend(args) -> int:
         print(banner)
 
     def on_progress(done, total, label):
-        # 실전 모드는 종목당 호출이 많아 오래 걸린다 — 진행상황을 보여준다
-        if not banner and total and (done % 5 == 0 or done == total or done == 1):
+        # 실전·재구성 모드는 종목당 호출이 많아 오래 걸린다 — 진행상황을 보여준다
+        if not args.demo and total and (done % 5 == 0 or done == total or done == 1):
             print(f"  분석 중 {done}/{total} — {label}")
 
     result = pipeline.run(provider, trade_date=trade_date, top_n=args.top, progress=on_progress)
