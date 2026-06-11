@@ -11,6 +11,10 @@ __pycache__/
 .venv/
 venv/
 
+# PyInstaller 빌드 산출물
+build/
+dist/
+
 # 편집기
 .idea/
 .vscode/

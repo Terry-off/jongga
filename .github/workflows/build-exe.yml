@@ -1,0 +1,40 @@
+name: 윈도우 exe 빌드
+
+on:
+  push:
+    branches: ["claude/wizardly-cori-nxdrbb", "main", "master"]
+    paths-ignore: ["**.md"]
+  workflow_dispatch:
+
+jobs:
+  build-windows-exe:
+    runs-on: windows-latest
+    steps:
+      - name: 소스 받기
+        uses: actions/checkout@v4
+
+      - name: 파이썬 준비
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 의존성 설치
+        run: |
+          pip install -r requirements.txt
+          pip install "pyinstaller>=6,<7"
+
+      - name: 테스트
+        run: python -m unittest discover tests
+
+      - name: exe 빌드
+        run: pyinstaller --noconfirm packaging/jongga.spec
+
+      - name: 빌드 결과 확인
+        run: dir dist
+
+      - name: exe 업로드 (Actions 화면에서 다운로드)
+        uses: actions/upload-artifact@v4
+        with:
+          name: 종가매매추천-윈도우-exe
+          path: dist/종가매매추천.exe
+          retention-days: 90

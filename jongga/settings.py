@@ -5,6 +5,7 @@ defaults.yaml 원본은 절대 수정하지 않는다.
 """
 import os
 import sqlite3
+import sys
 from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
@@ -12,7 +13,12 @@ from pathlib import Path
 import yaml
 from dotenv import load_dotenv
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+if getattr(sys, "frozen", False):
+    # PyInstaller exe: 설정(.env)·데이터(data/)·config/는 exe 파일 옆에 둔다 (포터블)
+    # 번들된 config 원본은 최초 실행 시 launcher가 exe 옆으로 복사한다
+    BASE_DIR = Path(sys.executable).resolve().parent
+else:
+    BASE_DIR = Path(__file__).resolve().parent.parent
 CONFIG_PATH = BASE_DIR / "config" / "defaults.yaml"
 DATA_DIR = BASE_DIR / "data"
 DB_PATH = DATA_DIR / "jongga.sqlite3"
