@@ -51,13 +51,23 @@ python -m jongga universe
 
 ---
 
+### 5. 추천 화면 미리보기 (API 키·인터넷 없이도 가능)
+```powershell
+python -m jongga recommend --demo
+```
+내장된 '가상의 하루' 데이터로 시장 신호등 → 베토 → 채점 → 비중 계산까지 전체 판단 과정을 보여줍니다.
+실전 데이터로 돌리려면 `--demo`를 빼고 장 마감 무렵(14:30~15:30)에 실행하세요.
+
 ## 명령어
 
 | 명령 | 설명 |
 |---|---|
+| `python -m jongga recommend [--demo] [--save] [--top 40]` | **종가매매 후보 추천** — 신호등·점수·이유·비중까지 |
 | `python -m jongga smoke` | KIS API 연결 테스트 (토큰 + 삼성전자 현재가) |
 | `python -m jongga universe [--save] [--top 30]` | 오늘 돈이 몰린 종목 목록 |
-| `python -m jongga init-db` | DB 파일 생성 (universe --save 시 자동 실행됨) |
+| `python -m jongga init-db` | DB 파일 생성 (--save 시 자동 실행됨) |
+
+테스트 실행: `python -m unittest discover tests`
 
 ## 프로젝트 구조
 
@@ -65,19 +75,23 @@ python -m jongga universe
 jongga/
 ├── DESIGN.md            # 설계서 (규칙·기준값·화면 설계의 원천)
 ├── config/defaults.yaml # 모든 필터 기본값 — 여기 수치가 판단 기준
+├── config/calendar.yaml # FOMC·휴장일 내장 캘린더 (직접 수정 가능)
 ├── jongga/
-│   ├── settings.py      # 설정·환경변수 로딩
-│   ├── db.py            # SQLite 스키마
-│   ├── kis/             # 한국투자증권 API (토큰·호출제한·시세)
+│   ├── engine/          # 판단 엔진: 베토 9개·100점 채점·신호등·비중 계산
+│   ├── kis/             # 한국투자증권 API (토큰·호출제한·시세·분봉·수급)
+│   ├── providers.py     # 데이터 공급자 (실시간 API / 시연 데이터)
+│   ├── demo.py          # 시연용 '가상의 하루'
 │   ├── universe.py      # 후보 종목 수집
+│   ├── db.py            # SQLite 스키마·결과 저장
 │   └── cli.py           # 터미널 명령
+├── tests/               # 엔진 테스트 (네트워크 불필요)
 └── data/                # 토큰 캐시·DB (git 제외)
 ```
 
 ## 로드맵
 
-- [x] **M1** KIS 연동 기반 + 유니버스 수집 CLI ← 현재
-- [ ] **M2** 베토 9개 + 채점 엔진 + 시장 신호등
+- [x] **M1** KIS 연동 기반 + 유니버스 수집 CLI
+- [x] **M2** 베토 9개 + 채점 엔진 + 시장 신호등 + 추천 CLI ← 현재
 - [ ] **M3** 재료 엔진 (DART 공시 + 네이버 뉴스 자동 등급)
 - [ ] **M4** 웹 대시보드 (토스 스타일 카드 UI)
 - [ ] **M5** 일일 자동 스냅샷 수집기 + 과거 조회

@@ -68,6 +68,90 @@ def cmd_universe(args) -> int:
     return 0
 
 
+_SIGNAL_ICON = {"green": "🟢", "yellow": "🟡", "red": "🔴"}
+_SIGNAL_TEXT = {"green": "매매해도 좋은 환경이에요", "yellow": "조심해야 하는 날이에요", "red": "오늘은 쉬는 날이에요"}
+
+
+def _render_day(result) -> None:
+    from jongga.engine.position import explain_position
+    from jongga.settings import cfg
+
+    line = "─" * 66
+    print(line)
+    print(f"{_SIGNAL_ICON[result.signal.color]} 시장 신호등 — {_SIGNAL_TEXT[result.signal.color]}   ({result.date} 기준)")
+    for reason in result.signal.reasons:
+        print(f"   · {reason}")
+    if result.signal.color == "red":
+        print("   ⛔ 쉬는 것도 포지션이에요. 아래 분석은 참고만 하고 오늘은 매매하지 마세요.")
+    print(line)
+
+    recs = [c for c in result.candidates if c.verdict in ("full", "half")]
+    watch = [c for c in result.candidates if c.verdict == "watch"]
+
+    print(f"\n📌 추천 후보 — 분석 {result.analyzed}종목 중 {len(recs)}종목")
+    if not recs:
+        print("   오늘은 기준(75점)을 넘은 종목이 없어요. 기준 미달인데 '그나마 나은 것'을 사는 건 시스템 위반이에요.")
+    for i, c in enumerate(recs, start=1):
+        s = c.stock
+        star = "★" if c.verdict == "full" else "☆"
+        print(f"\n[{i}] {s.name} ({s.code} · {s.market})  {c.pct:.1f}점  {star} {c.verdict_label}")
+        print(f"    {s.price:,}원 ({s.change_rate:+.1f}%) · 오늘 거래대금 {_eok(s.trading_value)}")
+        # 시장 분위기는 상단 신호등에 이미 표시 → 카드에는 종목 고유의 이유만
+        notes = [n for it in c.items if it.available and it.key != "market" for n in it.notes][:5]
+        if notes:
+            print("    이런 점이 좋아요:")
+            for n in notes:
+                print(f"      · {n}")
+        if c.position_amount:
+            print(f"    💰 {explain_position(cfg, c.stock_class, c.verdict, c.position_amount)}")
+        if c.unavailable:
+            print(f"    ❓ 확인 못한 항목: {', '.join(c.unavailable)} — 만점에서 빼고 채점했어요")
+
+    if watch:
+        print("\n👀 관찰만 — 추천 기준(75점)에 못 미쳐요. 내일을 위한 기록용이에요")
+        for c in watch:
+            print(f"   · {c.stock.name} ({c.stock.code})  {c.pct:.1f}점")
+
+    if result.rejected:
+        print("\n🚫 오늘 탈락한 종목과 이유")
+        for s, vetoes in result.rejected:
+            v = vetoes[0]
+            print(f"   ✕ {s.name} — {v.title}: {v.easy}")
+
+    for note in result.notes:
+        print(f"\nℹ️  {note}")
+    print("\n⚠️  이 프로그램은 추천 도구일 뿐이에요. 최종 판단과 책임은 투자자 본인에게 있어요.")
+
+
+def cmd_recommend(args) -> int:
+    from jongga.engine import pipeline
+
+    if args.demo:
+        from jongga.demo import DEMO_DATE
+        from jongga.providers import DemoProvider
+
+        provider = DemoProvider()
+        trade_date = args.date or DEMO_DATE
+        print("(시연 모드 — 내장된 '가상의 하루' 데이터로 판단 과정 전체를 보여드려요)\n")
+    else:
+        from jongga.providers import LiveProvider
+
+        provider = LiveProvider()
+        trade_date = args.date
+        if args.date:
+            print("(안내) 실시간 모드는 오늘 데이터 기준이에요 — 과거 날짜 재현은 M5에서 지원돼요.\n")
+
+    result = pipeline.run(provider, trade_date=trade_date, top_n=args.top)
+    _render_day(result)
+
+    if args.save:
+        from jongga.db import save_screening
+
+        count = save_screening(result)
+        print(f"\n✓ 결과 {count}건을 DB에 저장했어요 (복기용)")
+    return 0
+
+
 def cmd_init_db(_args) -> int:
     from jongga.db import init_db
 
@@ -77,6 +161,9 @@ def cmd_init_db(_args) -> int:
 
 
 def main(argv=None) -> None:
+    # 윈도우 구형 콘솔(cp949)에서 이모지로 인한 비정상 종료 방지
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(errors="replace")
     parser = argparse.ArgumentParser(
         prog="jongga",
         description="종가매매 종목 추천 프로그램 (추천 도구일 뿐, 투자 책임은 본인에게 있습니다)",
@@ -91,6 +178,13 @@ def main(argv=None) -> None:
     p_uni.add_argument("--save", action="store_true", help="결과를 DB에 저장")
     p_uni.add_argument("--top", type=int, default=30, help="표시할 종목 수 (기본 30, 0=전체)")
     p_uni.set_defaults(func=cmd_universe)
+
+    p_rec = sub.add_parser("recommend", help="종가매매 후보 추천 (--demo: 가상 데이터로 시연)")
+    p_rec.add_argument("--demo", action="store_true", help="API 키·네트워크 없이 내장 가상 데이터로 시연")
+    p_rec.add_argument("--date", help="기준 날짜 YYYY-MM-DD (시연·테스트용)")
+    p_rec.add_argument("--top", type=int, default=None, help="분석할 종목 수 (기본: 설정의 40)")
+    p_rec.add_argument("--save", action="store_true", help="결과를 DB에 저장 (복기용)")
+    p_rec.set_defaults(func=cmd_recommend)
 
     p_db = sub.add_parser("init-db", help="DB 파일 생성")
     p_db.set_defaults(func=cmd_init_db)

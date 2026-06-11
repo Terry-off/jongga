@@ -26,6 +26,29 @@ CREATE TABLE IF NOT EXISTS collect_log (
     status  TEXT NOT NULL,                  -- ok / error
     detail  TEXT
 );
+
+CREATE TABLE IF NOT EXISTS screening_day (
+    trade_date     TEXT PRIMARY KEY,
+    signal_color   TEXT,
+    signal_reasons TEXT,
+    analyzed       INTEGER,
+    created_at     TEXT
+);
+
+CREATE TABLE IF NOT EXISTS screening_result (
+    trade_date    TEXT NOT NULL,
+    code          TEXT NOT NULL,
+    name          TEXT,
+    kind          TEXT NOT NULL,            -- candidate / rejected
+    verdict       TEXT,                     -- full / half / watch (rejected는 빈값)
+    pct           REAL,
+    earned        REAL,
+    available_max REAL,
+    vetoes        TEXT,                     -- 탈락 사유 제목들
+    summary       TEXT,                     -- 쉬운 말 요약
+    created_at    TEXT,
+    PRIMARY KEY (trade_date, code)
+);
 """
 
 
@@ -58,5 +81,40 @@ def save_universe(trade_date: str, rows: list[dict]) -> int:
         conn.execute(
             "INSERT INTO collect_log (run_at, kind, status, detail) VALUES (?, 'universe', 'ok', ?)",
             (now, f"{trade_date} {len(rows)}종목"),
+        )
+    return len(rows)
+
+
+def save_screening(result) -> int:
+    """채점 결과 저장 (복기용). result: engine.models.DayResult"""
+    init_db()
+    now = datetime.now().isoformat(timespec="seconds")
+    rows = []
+    for c in result.candidates:
+        summary = " / ".join(n for it in c.items if it.available for n in it.notes[:1])
+        rows.append((result.date, c.stock.code, c.stock.name, "candidate", c.verdict,
+                     round(c.pct, 1), c.earned, c.available_max, "", summary, now))
+    for stock, vetoes in result.rejected:
+        rows.append((result.date, stock.code, stock.name, "rejected", "",
+                     0.0, 0.0, 0.0, "; ".join(v.title for v in vetoes),
+                     vetoes[0].easy if vetoes else "", now))
+    with connect() as conn:
+        conn.execute(
+            """INSERT INTO screening_day (trade_date, signal_color, signal_reasons, analyzed, created_at)
+               VALUES (?, ?, ?, ?, ?)
+               ON CONFLICT(trade_date) DO UPDATE SET
+                 signal_color=excluded.signal_color, signal_reasons=excluded.signal_reasons,
+                 analyzed=excluded.analyzed, created_at=excluded.created_at""",
+            (result.date, result.signal.color, " | ".join(result.signal.reasons), result.analyzed, now),
+        )
+        conn.executemany(
+            """INSERT INTO screening_result
+               (trade_date, code, name, kind, verdict, pct, earned, available_max, vetoes, summary, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(trade_date, code) DO UPDATE SET
+                 kind=excluded.kind, verdict=excluded.verdict, pct=excluded.pct,
+                 earned=excluded.earned, available_max=excluded.available_max,
+                 vetoes=excluded.vetoes, summary=excluded.summary, created_at=excluded.created_at""",
+            rows,
         )
     return len(rows)

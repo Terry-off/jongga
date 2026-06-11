@@ -152,3 +152,111 @@ def daily_candles(client: KisClient, code: str, start: str, end: str) -> list[di
     ]
     candles.sort(key=lambda c: c["date"])
     return candles
+
+
+def _prev_minute(hhmmss: str) -> str:
+    total = int(hhmmss[:2]) * 60 + int(hhmmss[2:4]) - 1
+    return f"{total // 60:02d}{total % 60:02d}00"
+
+
+def minute_candles(client: KisClient, code: str, start_hhmm: str = "0900") -> list[dict]:
+    """당일 분봉 — 1회 30건이라 15:30부터 뒤로 페이지를 넘기며 모은다"""
+    rows: dict[str, dict] = {}
+    hour = "153000"
+    for _ in range(16):
+        body = client.get(
+            "/uapi/domestic-stock/v1/quotations/inquire-time-itemchartprice",
+            tr_id="FHKST03010200",
+            params={
+                "FID_ETC_CLS_CODE": "",
+                "FID_COND_MRKT_DIV_CODE": "J",
+                "FID_INPUT_ISCD": code,
+                "FID_INPUT_HOUR_1": hour,
+                "FID_PW_DATA_INCU_YN": "Y",
+            },
+        )
+        got = [r for r in body.get("output2", []) if r.get("stck_cntg_hour")]
+        if not got:
+            break
+        for r in got:
+            t = r["stck_cntg_hour"][:4]
+            rows[t] = {
+                "time": t,
+                "open": _i(r.get("stck_oprc")),
+                "high": _i(r.get("stck_hgpr")),
+                "low": _i(r.get("stck_lwpr")),
+                "close": _i(r.get("stck_prpr")),
+                "volume": _i(r.get("cntg_vol")),
+            }
+        earliest = min(r["stck_cntg_hour"] for r in got)
+        if earliest[:4] <= start_hhmm:
+            break
+        hour = _prev_minute(earliest)
+    return sorted((r for r in rows.values() if r["time"] >= start_hhmm), key=lambda r: r["time"])
+
+
+def investor_trend(client: KisClient, code: str) -> list[dict]:
+    """종목별 일별 수급(외국인·기관·개인 순매수량) — 당일분은 장중 미확정일 수 있다"""
+    body = client.get(
+        "/uapi/domestic-stock/v1/quotations/inquire-investor",
+        tr_id="FHKST01010900",
+        params={"FID_COND_MRKT_DIV_CODE": "J", "FID_INPUT_ISCD": code},
+    )
+    rows = [
+        {
+            "date": r.get("stck_bsop_date", ""),
+            "person_net": _i(r.get("prsn_ntby_qty")),
+            "foreign_net": _i(r.get("frgn_ntby_qty")),
+            "inst_net": _i(r.get("orgn_ntby_qty")),
+        }
+        for r in body.get("output", [])
+        if r.get("stck_bsop_date")
+    ]
+    rows.sort(key=lambda r: r["date"])
+    return rows
+
+
+def index_price(client: KisClient, code: str = "0001") -> dict:
+    """업종/지수 현재가. code: 0001 코스피 / 1001 코스닥"""
+    body = client.get(
+        "/uapi/domestic-stock/v1/quotations/inquire-index-price",
+        tr_id="FHPUP02100000",
+        params={"FID_COND_MRKT_DIV_CODE": "U", "FID_INPUT_ISCD": code},
+    )
+    out = body.get("output", {})
+    last = _f(out.get("bstp_nmix_prpr"))
+    return {
+        "code": code,
+        "price": last,
+        "change": _f(out.get("bstp_nmix_prdy_vrss")),
+        "change_rate": _f(out.get("bstp_nmix_prdy_ctrt")),
+        "prev_close": last - _f(out.get("bstp_nmix_prdy_vrss")),
+    }
+
+
+def index_minutes(client: KisClient, code: str = "0001") -> list[dict]:
+    """업종/지수 분봉 — 응답 필드가 문서 버전에 따라 달라 보수적으로 매핑한다"""
+    body = client.get(
+        "/uapi/domestic-stock/v1/quotations/inquire-time-indexchartprice",
+        tr_id="FHKUP03500200",
+        params={
+            "FID_COND_MRKT_DIV_CODE": "U",
+            "FID_INPUT_ISCD": code,
+            "FID_INPUT_HOUR_1": "60",  # 60초 = 1분봉
+            "FID_PW_DATA_INCU_YN": "Y",
+            "FID_ETC_CLS_CODE": "0",
+        },
+    )
+    rows = []
+    for r in body.get("output2", []):
+        t = (r.get("stck_cntg_hour") or r.get("bsop_hour") or "")[:4]
+        price = _f(r.get("bstp_nmix_prpr") or r.get("optn_prpr") or r.get("stck_prpr"))
+        if t and price:
+            rows.append({"time": t, "price": price})
+    rows.sort(key=lambda r: r["time"])
+    out, prev = [], rows[0]["price"] if rows else 0.0
+    for r in rows:
+        out.append({"time": r["time"], "open": prev, "high": max(prev, r["price"]),
+                    "low": min(prev, r["price"]), "close": r["price"], "volume": 0})
+        prev = r["price"]
+    return out
