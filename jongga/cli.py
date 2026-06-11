@@ -156,7 +156,12 @@ def cmd_recommend(args) -> int:
     if banner:
         print(banner)
 
-    result = pipeline.run(provider, trade_date=trade_date, top_n=args.top)
+    def on_progress(done, total, label):
+        # 실전 모드는 종목당 호출이 많아 오래 걸린다 — 진행상황을 보여준다
+        if not banner and total and (done % 5 == 0 or done == total or done == 1):
+            print(f"  분석 중 {done}/{total} — {label}")
+
+    result = pipeline.run(provider, trade_date=trade_date, top_n=args.top, progress=on_progress)
     _render_day(result)
 
     if args.save:

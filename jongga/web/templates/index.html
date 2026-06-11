@@ -1,5 +1,9 @@
 {% extends "base.html" %}
 
+{% block head %}
+  {% if scanning or theme_collecting %}<meta http-equiv="refresh" content="2">{% endif %}
+{% endblock %}
+
 {% block nav %}
   {% if demo %}
     <span class="px-2.5 py-1 rounded-full bg-amber-100 text-amber-700 text-xs font-bold">시연 모드</span>
@@ -41,14 +45,46 @@
     ⚠️ {{ killswitch.cautions[0] }} <a href="/journal" class="underline">일지 보기</a>
   </div>
 {% endif %}
+{% if scanning %}
+  <section class="bg-white rounded-2xl border border-slate-100 p-10 mb-5 text-center">
+    <div class="mx-auto h-10 w-10 rounded-full border-4 border-slate-200 border-t-blue-600 animate-spin"></div>
+    <p class="font-bold mt-4">오늘 시장을 분석하고 있어요...</p>
+    <p class="text-sm text-blue-600 font-semibold mt-1">{{ progress }}</p>
+    <p class="text-xs text-slate-400 mt-3 leading-relaxed">
+      종목마다 일봉·분봉·수급·뉴스·공시를 모아서 채점해요 — 보통 2~4분 걸려요.<br>
+      이 화면은 2초마다 자동으로 새로고침되니 그대로 두시면 돼요.
+    </p>
+  </section>
+{% endif %}
+
 {% if error %}
   <div class="rounded-2xl border border-red-200 bg-red-50 p-4 mb-5 text-sm text-red-900">
     <p class="font-bold mb-1">데이터를 가져오지 못했어요</p>
     <p class="break-all">{{ error }}</p>
     <p class="mt-2 text-xs text-red-700">
-      인터넷 연결과 API 키를 확인해주세요. 화면 구경이 목적이면
-      <code class="bg-red-100 px-1 rounded">python -m jongga web --demo</code>로 실행하면 가상 데이터로 볼 수 있어요.
+      인터넷 연결과 API 키(.env 파일)를 확인한 뒤 🔄 다시 스캔을 눌러주세요.
     </p>
+    <form method="post" action="/scan" class="mt-2">
+      <button class="px-3 py-1.5 rounded-lg bg-red-600 text-white text-xs font-bold">🔄 다시 시도</button>
+    </form>
+  </div>
+{% endif %}
+
+{% if not demo and not scanning and (theme_banner or theme_collecting or theme_msg) %}
+  <div class="rounded-xl border border-amber-200 bg-amber-50 p-3 mb-5 text-sm text-amber-900">
+    {% if theme_collecting %}
+      <span class="font-semibold">테마 수집 중... {{ theme_progress }}</span>
+      <span class="text-xs">— 1~3분 걸려요. 화면은 자동 새로고침돼요.</span>
+    {% elif theme_msg %}
+      <span class="font-semibold">{{ theme_msg }}</span>
+    {% else %}
+      <div class="flex items-center justify-between gap-2 flex-wrap">
+        <span>{{ theme_banner }}</span>
+        <form method="post" action="/themes/collect">
+          <button class="px-3 py-1.5 rounded-lg bg-amber-500 text-white text-xs font-bold hover:bg-amber-600">테마 지금 수집하기</button>
+        </form>
+      </div>
+    {% endif %}
   </div>
 {% endif %}
 

@@ -66,13 +66,16 @@ def _validate_material(stock: StockView, ctx: DayContext) -> None:
                                "는 확인 불가 — 나머지 조건 충족으로 제한 인정")
 
 
-def run(provider, trade_date: str | None = None, top_n: int | None = None) -> DayResult:
+def run(provider, trade_date: str | None = None, top_n: int | None = None,
+        progress=lambda done, total, label: None) -> DayResult:
     d = date_cls.fromisoformat(trade_date) if trade_date else date_cls.today()
     top_n = top_n or cfg("universe.analyze_top", 40)
 
+    progress(0, 0, "오늘 돈이 몰린 종목을 모으는 중")
     universe = sorted(provider.universe(), key=lambda r: r.get("trading_value", 0), reverse=True)
     events_tomorrow = calendar_events.events_for_next_session(d)
     pre_holiday = calendar_events.is_pre_holiday(d)
+    progress(0, 0, "테마·시장 신호등 확인 중")
     theme_map = provider.theme_map()
     theme_available = bool(theme_map)
     resolver = None
@@ -93,6 +96,7 @@ def run(provider, trade_date: str | None = None, top_n: int | None = None) -> Da
     candidates, rejected = [], []
     analyzed = universe[:top_n]
     for rank, row in enumerate(analyzed, start=1):
+        progress(rank, len(analyzed), f"{row.get('name', row.get('code', ''))} 분석 중")
         stock = _load_stock(provider, row, rank)
         if resolver:
             resolver.annotate(stock)

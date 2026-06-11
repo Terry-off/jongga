@@ -39,30 +39,87 @@ def create_app(demo: bool = False) -> FastAPI:
     templates.env.filters["eok"] = _eok
     templates.env.filters["comma"] = lambda v: f"{v:,}"
 
-    state = {"result": None, "ran_at": None, "error": None, "demo": demo, "viewing": None}
+    import threading
 
-    def run_pipeline(date_arg: str | None = None):
-        from datetime import date as _date
-        if state["demo"]:
-            from jongga.demo import DEMO_DATE
-            from jongga.providers import DemoProvider
-            state["result"] = pipeline.run(DemoProvider(), trade_date=DEMO_DATE)
-            state["viewing"] = None
-        elif date_arg and date_arg != _date.today().isoformat():
-            from jongga.providers import DBProvider
-            provider = DBProvider(date_arg)
-            if not provider.has_data():
-                raise RuntimeError(
-                    f"{date_arg}에 저장된 데이터가 없어요. 그날 수집(collect)이 돌지 않았다면 "
-                    "분봉·시간외는 복구할 수 없어요. 저장된 날짜만 조회할 수 있어요.")
-            state["result"] = pipeline.run(provider, trade_date=date_arg)
-            state["viewing"] = date_arg
-        else:
-            from jongga.providers import LiveProvider
-            state["result"] = pipeline.run(LiveProvider())
-            state["viewing"] = None
+    state = {"result": None, "ran_at": None, "error": None, "demo": demo, "viewing": None,
+             "scanning": False, "progress": "",
+             "theme_collecting": False, "theme_progress": "", "theme_msg": ""}
+    scan_lock = threading.Lock()
+
+    def run_demo():
+        from jongga.demo import DEMO_DATE
+        from jongga.providers import DemoProvider
+        state["result"] = pipeline.run(DemoProvider(), trade_date=DEMO_DATE)
+        state["viewing"] = None
         state["ran_at"] = datetime.now().strftime("%H:%M")
         state["error"] = None
+
+    def load_past(date_arg: str):
+        from jongga.providers import DBProvider
+        provider = DBProvider(date_arg)
+        if not provider.has_data():
+            raise RuntimeError(
+                f"{date_arg}에 저장된 데이터가 없어요. 그날 수집(collect)이 돌지 않았다면 "
+                "분봉·시간외는 복구할 수 없어요. 저장된 날짜만 조회할 수 있어요.")
+        state["result"] = pipeline.run(provider, trade_date=date_arg)
+        state["viewing"] = date_arg
+        state["ran_at"] = datetime.now().strftime("%H:%M")
+        state["error"] = None
+
+    def _live_scan_worker():
+        # 실전 스캔은 종목당 KIS 호출이 많아 몇 분 걸린다 → 백그라운드에서 돌리고
+        # 화면은 진행상황을 보여주며 자동 새로고침한다
+        from jongga.providers import LiveProvider
+        def on_progress(done, total, label):
+            state["progress"] = f"{done}/{total} · {label}" if total else label
+        try:
+            result = pipeline.run(LiveProvider(), progress=on_progress)
+            state["result"] = result
+            state["viewing"] = None
+            state["ran_at"] = datetime.now().strftime("%H:%M")
+            state["error"] = None
+        except Exception as exc:
+            state["error"] = str(exc)
+            state["result"] = None
+        finally:
+            state["scanning"] = False
+
+    def start_live_scan():
+        with scan_lock:
+            if state["scanning"]:
+                return
+            state["scanning"] = True
+            state["progress"] = "준비 중..."
+            state["error"] = None
+            threading.Thread(target=_live_scan_worker, daemon=True).start()
+
+    def _theme_collect_worker():
+        from datetime import date as _date
+        from jongga.db import save_theme_map
+        from jongga.theme import scraper
+        def on_progress(i, total, name):
+            state["theme_progress"] = f"{i}/{total} · {name}"
+        try:
+            theme_map = scraper.collect(progress=on_progress)
+            if theme_map:
+                save_theme_map(_date.today().isoformat(), theme_map)
+                state["theme_msg"] = f"✓ 테마 {len(theme_map)}개 수집 완료 — 🔄 다시 스캔하면 '테마 동조' 점수가 반영돼요"
+            else:
+                state["theme_msg"] = "테마 수집에 실패했어요 — 인터넷 연결을 확인하고 다시 시도해주세요"
+        except Exception as exc:
+            state["theme_msg"] = f"테마 수집 실패: {exc}"
+        finally:
+            state["theme_collecting"] = False
+
+    def _theme_banner() -> str:
+        from datetime import date as _date
+        from jongga.db import latest_theme_date
+        latest = latest_theme_date()
+        if latest is None:
+            return "테마 데이터가 아직 없어요 — '테마 동조' 15점이 확인 불가로 빠져 있어요"
+        if latest < _date.today().isoformat():
+            return f"테마 데이터가 {latest} 기준이에요 — 새로 수집하면 더 정확해져요"
+        return ""
 
     def _cards(result):
         cards = []
@@ -77,13 +134,28 @@ def create_app(demo: bool = False) -> FastAPI:
 
     @app.get("/", response_class=HTMLResponse)
     def home(request: Request, date: str | None = None):
-        # 날짜 파라미터가 바뀌었거나 첫 진입이면 다시 계산
-        if date != state["viewing"] or (state["result"] is None and state["error"] is None):
-            try:
-                run_pipeline(date)
-            except Exception as exc:
-                state["error"] = str(exc)
-                state["result"] = None
+        from datetime import date as _date
+        today = _date.today().isoformat()
+        if state["demo"]:
+            if state["result"] is None and state["error"] is None:
+                try:
+                    run_demo()
+                except Exception as exc:
+                    state["error"] = str(exc)
+        elif date and date != today:
+            # 과거 조회는 로컬 DB라 즉시 끝난다
+            if date != state["viewing"]:
+                try:
+                    load_past(date)
+                except Exception as exc:
+                    state["error"] = str(exc)
+                    state["result"] = None
+        else:
+            # 오늘(실전)은 느리므로 백그라운드 스캔 + 진행 화면
+            if state["viewing"] is not None:
+                state["result"], state["viewing"] = None, None
+            if state["result"] is None and not state["scanning"] and state["error"] is None:
+                start_live_scan()
         result = state["result"]
         from jongga.db import collected_dates
         killswitch = None
@@ -101,6 +173,12 @@ def create_app(demo: bool = False) -> FastAPI:
             "error": state["error"],
             "viewing": state["viewing"],
             "killswitch": killswitch,
+            "scanning": state["scanning"],
+            "progress": state["progress"],
+            "theme_banner": "" if state["demo"] else _theme_banner(),
+            "theme_collecting": state["theme_collecting"],
+            "theme_progress": state["theme_progress"],
+            "theme_msg": state["theme_msg"],
             "past_dates": [] if state["demo"] else collected_dates()[:60],
             "signal": SIGNAL_STYLE.get(result.signal.color) if result else None,
             "cards": _cards(result) if result else [],
@@ -109,11 +187,26 @@ def create_app(demo: bool = False) -> FastAPI:
 
     @app.post("/scan")
     def scan():
-        try:
-            run_pipeline()
-        except Exception as exc:
-            state["error"] = str(exc)
-            state["result"] = None
+        if state["demo"]:
+            try:
+                run_demo()
+            except Exception as exc:
+                state["error"] = str(exc)
+                state["result"] = None
+        else:
+            state["result"], state["viewing"], state["error"] = None, None, None
+            state["theme_msg"] = ""
+            start_live_scan()
+        return RedirectResponse("/", status_code=303)
+
+    @app.post("/themes/collect")
+    def themes_collect():
+        if not state["theme_collecting"]:
+            state["theme_collecting"] = True
+            state["theme_progress"] = "테마 목록 받는 중..."
+            state["theme_msg"] = ""
+            import threading as _t
+            _t.Thread(target=_theme_collect_worker, daemon=True).start()
         return RedirectResponse("/", status_code=303)
 
     @app.get("/api/chart/{code}")
