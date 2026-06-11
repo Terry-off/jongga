@@ -1,5 +1,6 @@
 """SQLite 저장 계층 — 스키마 전체 개요는 DESIGN.md 7장"""
 import sqlite3
+from contextlib import contextmanager
 from datetime import datetime
 
 from jongga.settings import DATA_DIR, DB_PATH
@@ -108,11 +109,21 @@ CREATE TABLE IF NOT EXISTS screening_result (
 """
 
 
-def connect() -> sqlite3.Connection:
+@contextmanager
+def connect():
+    """with connect() as conn: — 블록이 끝나면 커밋하고 연결을 '닫는다'.
+
+    sqlite3.Connection의 기본 컨텍스트 매니저는 트랜잭션만 정리하고 연결을 닫지 않아
+    윈도우에서 DB 파일이 잠긴 채 남는다(WinError 32). 반드시 닫아준다.
+    """
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
-    return conn
+    try:
+        yield conn
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def init_db() -> None:

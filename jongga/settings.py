@@ -46,15 +46,26 @@ def yaml_default(path: str):
     return node
 
 
+def _db(write_fn):
+    """settings 전용 짧은 DB 접근 — 끝나면 반드시 닫는다 (윈도우 파일 잠금 방지)"""
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.execute(_OVERRIDE_DDL)
+        result = write_fn(conn)
+        conn.commit()
+        return result
+    finally:
+        conn.close()
+
+
 def overrides() -> dict:
     global _overrides_cache
     if _overrides_cache is None:
         _overrides_cache = {}
         if DB_PATH.exists():
             try:
-                with sqlite3.connect(DB_PATH) as conn:
-                    conn.execute(_OVERRIDE_DDL)
-                    _overrides_cache = dict(conn.execute("SELECT key, value FROM settings_override"))
+                _overrides_cache = _db(
+                    lambda c: dict(c.execute("SELECT key, value FROM settings_override")))
             except sqlite3.Error:
                 pass
     return _overrides_cache
@@ -67,31 +78,25 @@ def _invalidate() -> None:
 
 def set_override(key: str, value) -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.execute(_OVERRIDE_DDL)
-        conn.execute(
-            "INSERT INTO settings_override (key, value, updated_at) VALUES (?, ?, ?) "
-            "ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at",
-            (key, str(value), datetime.now().isoformat(timespec="seconds")),
-        )
+    _db(lambda c: c.execute(
+        "INSERT INTO settings_override (key, value, updated_at) VALUES (?, ?, ?) "
+        "ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at",
+        (key, str(value), datetime.now().isoformat(timespec="seconds")),
+    ))
     _invalidate()
 
 
 def remove_override(key: str) -> None:
     if not DB_PATH.exists():
         return
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.execute(_OVERRIDE_DDL)
-        conn.execute("DELETE FROM settings_override WHERE key = ?", (key,))
+    _db(lambda c: c.execute("DELETE FROM settings_override WHERE key = ?", (key,)))
     _invalidate()
 
 
 def clear_overrides() -> None:
     if not DB_PATH.exists():
         return
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.execute(_OVERRIDE_DDL)
-        conn.execute("DELETE FROM settings_override")
+    _db(lambda c: c.execute("DELETE FROM settings_override"))
     _invalidate()
 
 
