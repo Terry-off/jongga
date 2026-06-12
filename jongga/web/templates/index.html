@@ -92,11 +92,23 @@
     <p class="font-bold mb-1">데이터를 가져오지 못했어요</p>
     <p class="break-all">{{ error }}</p>
     <p class="mt-2 text-xs text-red-700">
-      인터넷 연결과 API 키(.env 파일)를 확인한 뒤 🔄 다시 스캔을 눌러주세요.
+      {% if "거래소" in error or "KRX" in error or "HTTP" in error %}
+        거래소(KRX) 서버 연결 문제예요 — API 키와는 무관합니다. 인터넷 연결을 확인하고 잠시 후 다시 시도해주세요.
+      {% elif "휴장" in error or "주말" in error %}
+        날짜를 바꿔서 다시 실행해주세요.
+      {% elif "KIS_APP_KEY" in error or "KIS_APP_SECRET" in error %}
+        exe 옆의 .env 파일을 메모장으로 열어 <code>KIS_APP_KEY</code>와 <code>KIS_APP_SECRET</code>을 넣고 저장한 뒤 다시 실행해주세요.
+      {% elif "인증" in error or "토큰" in error or "한국투자증권" in error %}
+        .env 파일의 한국투자증권(KIS) API 키가 올바른지 확인해주세요.
+      {% else %}
+        인터넷 연결을 확인한 뒤 다시 시도해주세요.
+      {% endif %}
     </p>
+    {% if "휴장" not in error and "주말" not in error %}
     <form method="post" action="/scan" class="mt-2">
       <button class="px-3 py-1.5 rounded-lg bg-red-600 text-white text-xs font-bold">🔄 다시 시도</button>
     </form>
+    {% endif %}
   </div>
 {% endif %}
 
