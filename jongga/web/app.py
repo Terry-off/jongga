@@ -1,7 +1,8 @@
 """웹 대시보드 — 추천 화면·설정 화면 (DESIGN.md 6장)
 
 실행: python -m jongga web [--demo] [--port 8765]
-결과는 메모리에 캐시되고 '다시 스캔' 버튼으로 갱신한다.
+스캔은 자동으로 돌지 않는다 — 사용자가 날짜를 고르고 ▶ 실행(POST /run)을
+눌러야 시작한다. 결과는 메모리에 캐시되고 '다시 스캔' 버튼으로 갱신하며,
 설정 저장 시 캐시를 비워 다음 조회부터 새 기준이 적용된다.
 """
 from datetime import datetime, timedelta, timezone
@@ -153,49 +154,9 @@ def create_app(demo: bool = False) -> FastAPI:
         return cards
 
     @app.get("/", response_class=HTMLResponse)
-    def home(request: Request, date: str | None = None):
+    def home(request: Request):
+        # 화면은 현재 상태를 보여주기만 한다 — 스캔은 사용자가 ▶ 실행을 눌러야 시작 (POST /run)
         from datetime import date as _date
-        today = _date.today().isoformat()
-        if state["demo"]:
-            if state["result"] is None and state["error"] is None:
-                try:
-                    run_demo()
-                except Exception as exc:
-                    state["error"] = str(exc)
-        elif date and date != today:
-            if _is_market_holiday(date):
-                # 휴장일은 스캔 여부와 무관하게 즉시 안내 (KRX·KIS 호출 없음)
-                if state["error_date"] != date:
-                    state["error_date"] = date
-                    state["error"] = f"{date}은 증시 휴장일이에요 (주말·공휴일·임시휴장일). 거래가 있었던 평일을 선택해주세요."
-                    if not state["scanning"]:
-                        state["result"], state["viewing"] = None, None
-            else:
-                # 새 날짜 요청 판정: 보고 있는/스캔 중인/직전에 실패한 날짜가 아니면 새로 처리.
-                # (error_date 덕에 실패한 날짜의 자동 새로고침이 무한 재시도되지 않는다)
-                is_new = (date != state["viewing"] and date != state["scan_target"]
-                          and date != state["error_date"])
-                if is_new and not state["scanning"]:
-                    state["error"], state["result"], state["error_date"] = None, None, None
-                    from jongga.providers import DBProvider
-                    provider = DBProvider(date)
-                    if provider.has_data():
-                        try:
-                            load_past(date)
-                            state["recon"] = False
-                        except Exception as exc:
-                            state["error"], state["error_date"], state["result"] = str(exc), date, None
-                    else:
-                        start_scan(date)  # 저장본 없으면 KRX·KIS로 재구성 (백그라운드)
-        else:
-            # 오늘(실전)은 느리므로 백그라운드 스캔 + 진행 화면
-            if state["viewing"] is not None and not state["scanning"]:
-                state["result"], state["viewing"] = None, None
-            # 과거 날짜에서 났던 오류는 오늘 화면과 무관 → 정리하고 새로 스캔
-            if state["error_date"] and state["error_date"] != "__live__":
-                state["error"], state["error_date"] = None, None
-            if state["result"] is None and not state["scanning"] and state["error"] is None:
-                start_scan()
         result = state["result"]
         from jongga.db import collected_dates
         killswitch = None
@@ -228,6 +189,48 @@ def create_app(demo: bool = False) -> FastAPI:
             "watch": [c for c in result.candidates if c.verdict == "watch"] if result else [],
         })
 
+    @app.post("/run")
+    async def run(request: Request):
+        """달력에서 고른 날짜로 스캔 시작 — 사용자가 ▶ 실행을 눌렀을 때만 동작"""
+        from datetime import date as _date
+        if state["demo"]:
+            try:
+                run_demo()
+            except Exception as exc:
+                state["error"], state["result"] = str(exc), None
+            return RedirectResponse("/", status_code=303)
+        if state["scanning"]:
+            return RedirectResponse("/", status_code=303)  # 진행 중엔 새 요청 무시
+        form = await request.form()
+        today = _date.today().isoformat()
+        date_arg = str(form.get("date") or "").strip() or today
+        state["error"], state["error_date"], state["theme_msg"] = None, None, ""
+        if date_arg > today:
+            state["result"], state["viewing"] = None, None
+            state["error"] = f"{date_arg}는 아직 오지 않은 날짜예요. 오늘이나 과거 거래일을 선택해주세요."
+            state["error_date"] = date_arg
+        elif _is_market_holiday(date_arg):
+            # 휴장일은 KRX·KIS 호출 없이 즉시 안내
+            state["result"], state["viewing"] = None, None
+            state["error"] = f"{date_arg}은 증시 휴장일이에요 (주말·공휴일·임시휴장일). 거래가 있었던 평일을 선택해주세요."
+            state["error_date"] = date_arg
+        elif date_arg == today:
+            state["result"], state["viewing"] = None, None
+            start_scan()                       # 오늘 = 실시간 스캔 (백그라운드)
+        else:
+            from jongga.providers import DBProvider
+            provider = DBProvider(date_arg)
+            if provider.has_data():            # 저장본이 있으면 즉시 재현
+                try:
+                    load_past(date_arg)
+                    state["recon"] = False
+                except Exception as exc:
+                    state["error"], state["error_date"], state["result"] = str(exc), date_arg, None
+            else:                              # 없으면 KRX·KIS로 재구성 (백그라운드)
+                state["result"], state["viewing"] = None, None
+                start_scan(date_arg)
+        return RedirectResponse("/", status_code=303)
+
     @app.post("/scan")
     def scan():
         if state["demo"]:
@@ -237,6 +240,7 @@ def create_app(demo: bool = False) -> FastAPI:
                 state["error"] = str(exc)
                 state["result"] = None
         else:
+            from datetime import date as _date
             # 보고 있던 날짜, 또는 방금 실패한 날짜를 다시 계산 (없으면 오늘)
             target = state["viewing"]
             if not target and state["error_date"] and state["error_date"] != "__live__":
@@ -244,9 +248,10 @@ def create_app(demo: bool = False) -> FastAPI:
             state["result"], state["viewing"] = None, None
             state["error"], state["error_date"] = None, None
             state["theme_msg"] = ""
+            if target and (target > _date.today().isoformat() or _is_market_holiday(target)):
+                # 휴장일·미래 날짜는 다시 시도해도 같다 → 대기 화면에서 새 날짜 선택 유도
+                return RedirectResponse("/", status_code=303)
             start_scan(target)
-            if target:
-                return RedirectResponse(f"/?date={target}", status_code=303)
         return RedirectResponse("/", status_code=303)
 
     @app.post("/themes/collect")

@@ -28,10 +28,19 @@ class TestWebApp(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.client = TestClient(create_app(demo=True))
+        cls.client.post("/run")   # 스캔은 자동으로 돌지 않으므로 ▶ 실행을 누른 상태를 만든다
 
     @classmethod
     def tearDownClass(cls):
         settings.clear_overrides()
+
+    def test_home_idle_before_run(self):
+        # 첫 화면은 대기 상태 — 사용자가 ▶ 실행을 누르기 전엔 스캔하지 않는다
+        fresh = TestClient(create_app(demo=True))
+        res = fresh.get("/")
+        self.assertEqual(res.status_code, 200)
+        self.assertIn("실행을 눌러주세요", res.text)
+        self.assertNotIn("시장 신호등", res.text)
 
     def test_home_renders_demo(self):
         res = self.client.get("/")
@@ -42,7 +51,6 @@ class TestWebApp(unittest.TestCase):
         self.assertIn("재료 없음", res.text)  # 델타소재 탈락 사유
 
     def test_chart_api(self):
-        self.client.get("/")
         res = self.client.get("/api/chart/201010")
         self.assertEqual(res.status_code, 200)
         body = res.json()
@@ -51,7 +59,6 @@ class TestWebApp(unittest.TestCase):
         self.assertEqual(len(body["daily"][0]["time"]), 10)  # YYYY-MM-DD
 
     def test_chart_api_unknown_code(self):
-        self.client.get("/")
         self.assertEqual(self.client.get("/api/chart/999999").status_code, 404)
 
     def test_settings_page(self):
@@ -82,8 +89,8 @@ class TestWebApp(unittest.TestCase):
         self.assertEqual(settings.cfg("trading_value.midsmall_min_eok"), 300)
 
 
-class TestPastDateGuards(unittest.TestCase):
-    """과거 날짜 조회의 사전 안내 — 네트워크를 부르기 전에 휴장일을 걸러낸다"""
+class TestRunGuards(unittest.TestCase):
+    """▶ 실행의 사전 안내 — 네트워크를 부르기 전에 휴장일·미래 날짜를 걸러낸다"""
 
     @classmethod
     def setUpClass(cls):
@@ -93,21 +100,36 @@ class TestPastDateGuards(unittest.TestCase):
     def tearDownClass(cls):
         settings.clear_overrides()
 
+    def test_home_is_idle_without_run(self):
+        # 실전 모드도 접속만으로는 스캔하지 않는다 — 시작 화면만 보여준다
+        fresh = TestClient(create_app(demo=False))
+        res = fresh.get("/")
+        self.assertEqual(res.status_code, 200)
+        self.assertIn("실행을 눌러주세요", res.text)
+        self.assertNotIn("분석하고 있어요", res.text)
+
     def test_election_holiday_immediate_message(self):
         # 2026-06-03 지방선거(증시 휴장) — KRX 호출 없이 즉시 안내
-        res = self.client.get("/?date=2026-06-03")
+        res = self.client.post("/run", data={"date": "2026-06-03"})
         self.assertEqual(res.status_code, 200)
         self.assertIn("휴장일이에요", res.text)
 
     def test_weekend_immediate_message(self):
-        res = self.client.get("/?date=2026-06-07")  # 일요일
+        res = self.client.post("/run", data={"date": "2026-06-07"})  # 일요일
         self.assertEqual(res.status_code, 200)
         self.assertIn("휴장일이에요", res.text)
 
+    def test_future_date_immediate_message(self):
+        res = self.client.post("/run", data={"date": "2099-01-01"})
+        self.assertEqual(res.status_code, 200)
+        self.assertIn("아직 오지 않은 날짜", res.text)
+
     def test_other_date_clears_previous_error(self):
-        # 휴장일 오류가 떠 있어도 다른 날짜를 고르면 새로 진행(스캔 시작)되어야 한다
-        self.client.get("/?date=2026-06-03")
-        res = self.client.get("/?date=2026-06-04")
+        # 휴장일 오류가 떠 있어도 다른 날짜로 실행하면 새로 진행(스캔 시작)되어야 한다
+        # (백그라운드 스캔이 시작되므로 다른 테스트와 상태를 공유하지 않게 새 앱 사용)
+        fresh = TestClient(create_app(demo=False))
+        fresh.post("/run", data={"date": "2026-06-03"})
+        res = fresh.post("/run", data={"date": "2026-06-04"})
         self.assertEqual(res.status_code, 200)
         self.assertNotIn("2026-06-03은 증시 휴장일", res.text)
 

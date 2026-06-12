@@ -12,17 +12,19 @@
   {% endif %}
   {% if not demo %}
     {% if viewing %}
-      <a href="/" class="px-2.5 py-1 rounded-full bg-violet-100 text-violet-700 text-xs font-bold">📅 {{ viewing }} · 오늘로 돌아가기</a>
+      <span class="px-2.5 py-1 rounded-full bg-violet-100 text-violet-700 text-xs font-bold">📅 {{ viewing }} 보는 중</span>
     {% endif %}
-    <form method="get" action="/" class="flex items-center gap-1">
-      <input type="date" name="date" value="{{ viewing or '' }}" max="{{ today }}"
+    <form method="post" action="/run" class="flex items-center gap-1">
+      <input type="date" name="date" value="{{ viewing or today }}" max="{{ today }}"
              class="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white">
-      <button class="px-2.5 py-1.5 rounded-lg bg-violet-600 text-white text-xs font-bold hover:bg-violet-700">조회</button>
+      <button class="px-2.5 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-bold hover:bg-blue-700">▶ 실행</button>
     </form>
   {% endif %}
+  {% if result or error %}
   <form method="post" action="/scan">
     <button class="px-3 py-1.5 rounded-lg bg-slate-900 text-white text-xs font-semibold hover:bg-slate-700">🔄 다시 스캔</button>
   </form>
+  {% endif %}
   <a href="/journal" class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-semibold hover:bg-slate-100">📒 일지</a>
   <a href="/settings" class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-semibold hover:bg-slate-100">⚙️ 설정</a>
 {% endblock %}
@@ -41,6 +43,29 @@
     ⚠️ {{ killswitch.cautions[0] }} <a href="/journal" class="underline">일지 보기</a>
   </div>
 {% endif %}
+{% if not result and not scanning and not error %}
+  <section class="bg-white rounded-2xl border border-slate-100 p-10 mb-5 text-center">
+    <p class="text-4xl">📅</p>
+    <h2 class="font-bold text-xl mt-3">날짜를 고르고 ▶ 실행을 눌러주세요</h2>
+    <p class="text-sm text-slate-500 mt-2 leading-relaxed">
+      그날 종가 기준으로 '사도 되는 종목'을 찾아드려요.<br>
+      오늘 날짜면 실시간으로, 과거 날짜면 그날 데이터를 다시 계산해서 보여드려요.
+    </p>
+    <form method="post" action="/run" class="mt-6 flex items-center justify-center gap-2 flex-wrap">
+      {% if not demo %}
+        <input type="date" name="date" value="{{ today }}" max="{{ today }}"
+               class="text-sm border border-slate-200 rounded-xl px-3 py-2.5 bg-white">
+      {% endif %}
+      <button class="px-6 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-bold hover:bg-blue-700">▶ 실행</button>
+    </form>
+    {% if demo %}
+      <p class="text-xs text-amber-600 mt-4">시연 모드예요 — 실행을 누르면 가상 데이터로 화면을 체험할 수 있어요</p>
+    {% else %}
+      <p class="text-xs text-slate-400 mt-4">실행하면 종목마다 일봉·분봉·수급·뉴스·공시를 모아 채점해요 — 보통 2~4분 걸려요.</p>
+    {% endif %}
+  </section>
+{% endif %}
+
 {% if scanning %}
   <section class="bg-white rounded-2xl border border-slate-100 p-10 mb-5 text-center">
     <div class="mx-auto h-10 w-10 rounded-full border-4 border-slate-200 border-t-blue-600 animate-spin"></div>
@@ -48,7 +73,8 @@
     <p class="text-sm text-blue-600 font-semibold mt-1">{{ progress }}</p>
     <p class="text-xs text-slate-400 mt-3 leading-relaxed">
       종목마다 일봉·분봉·수급·뉴스·공시를 모아서 채점해요 — 보통 2~4분 걸려요.<br>
-      이 화면은 2초마다 자동으로 새로고침되니 그대로 두시면 돼요.
+      이 화면은 2초마다 자동으로 새로고침되니 그대로 두시면 돼요.<br>
+      다른 날짜를 보고 싶으면 이 분석이 끝난 뒤 실행해주세요.
     </p>
   </section>
 {% endif %}
