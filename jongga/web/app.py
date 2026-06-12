@@ -41,7 +41,8 @@ def create_app(demo: bool = False) -> FastAPI:
 
     import threading
 
-    state = {"result": None, "ran_at": None, "error": None, "demo": demo, "viewing": None,
+    state = {"result": None, "ran_at": None, "error": None, "error_date": None,
+             "demo": demo, "viewing": None,
              "scanning": False, "progress": "", "scan_target": None, "recon": False,
              "theme_collecting": False, "theme_progress": "", "theme_msg": ""}
     scan_lock = threading.Lock()
@@ -88,9 +89,11 @@ def create_app(demo: bool = False) -> FastAPI:
             state["error"] = None
         except Exception as exc:
             state["error"] = str(exc)
+            state["error_date"] = date_arg or "__live__"   # 실패한 날짜 — 자동 재시도 방지
             state["result"] = None
         finally:
             state["scanning"] = False
+            state["scan_target"] = None
 
     def start_scan(date_arg: str | None = None):
         with scan_lock:
@@ -130,6 +133,14 @@ def create_app(demo: bool = False) -> FastAPI:
             return f"테마 데이터가 {latest} 기준이에요 — 새로 수집하면 더 정확해져요"
         return ""
 
+    def _is_market_holiday(date_iso: str) -> bool:
+        from datetime import date as _date
+        from jongga.calendar_events import is_holiday
+        try:
+            return is_holiday(_date.fromisoformat(date_iso))
+        except ValueError:
+            return False
+
     def _cards(result):
         cards = []
         for c in result.candidates:
@@ -152,24 +163,37 @@ def create_app(demo: bool = False) -> FastAPI:
                 except Exception as exc:
                     state["error"] = str(exc)
         elif date and date != today:
-            if date != state["viewing"] and not state["scanning"]:
-                from jongga.providers import DBProvider
-                provider = DBProvider(date)
-                if provider.has_data():
-                    # 그날 저장본이 있으면 즉시 완전 재현
-                    try:
-                        load_past(date)
-                        state["recon"] = False
-                    except Exception as exc:
-                        state["error"] = str(exc)
-                        state["result"] = None
-                elif state["error"] is None:
-                    # 저장본이 없으면 KRX·KIS로 재구성 (몇 분 — 백그라운드)
-                    start_scan(date)
+            if _is_market_holiday(date):
+                # 휴장일은 스캔 여부와 무관하게 즉시 안내 (KRX·KIS 호출 없음)
+                if state["error_date"] != date:
+                    state["error_date"] = date
+                    state["error"] = f"{date}은 증시 휴장일이에요 (주말·공휴일·임시휴장일). 거래가 있었던 평일을 선택해주세요."
+                    if not state["scanning"]:
+                        state["result"], state["viewing"] = None, None
+            else:
+                # 새 날짜 요청 판정: 보고 있는/스캔 중인/직전에 실패한 날짜가 아니면 새로 처리.
+                # (error_date 덕에 실패한 날짜의 자동 새로고침이 무한 재시도되지 않는다)
+                is_new = (date != state["viewing"] and date != state["scan_target"]
+                          and date != state["error_date"])
+                if is_new and not state["scanning"]:
+                    state["error"], state["result"], state["error_date"] = None, None, None
+                    from jongga.providers import DBProvider
+                    provider = DBProvider(date)
+                    if provider.has_data():
+                        try:
+                            load_past(date)
+                            state["recon"] = False
+                        except Exception as exc:
+                            state["error"], state["error_date"], state["result"] = str(exc), date, None
+                    else:
+                        start_scan(date)  # 저장본 없으면 KRX·KIS로 재구성 (백그라운드)
         else:
             # 오늘(실전)은 느리므로 백그라운드 스캔 + 진행 화면
             if state["viewing"] is not None and not state["scanning"]:
                 state["result"], state["viewing"] = None, None
+            # 과거 날짜에서 났던 오류는 오늘 화면과 무관 → 정리하고 새로 스캔
+            if state["error_date"] and state["error_date"] != "__live__":
+                state["error"], state["error_date"] = None, None
             if state["result"] is None and not state["scanning"] and state["error"] is None:
                 start_scan()
         result = state["result"]
@@ -213,8 +237,12 @@ def create_app(demo: bool = False) -> FastAPI:
                 state["error"] = str(exc)
                 state["result"] = None
         else:
-            target = state["viewing"]  # 과거 화면에서 누르면 그 날짜를 다시 계산
-            state["result"], state["viewing"], state["error"] = None, None, None
+            # 보고 있던 날짜, 또는 방금 실패한 날짜를 다시 계산 (없으면 오늘)
+            target = state["viewing"]
+            if not target and state["error_date"] and state["error_date"] != "__live__":
+                target = state["error_date"]
+            state["result"], state["viewing"] = None, None
+            state["error"], state["error_date"] = None, None
             state["theme_msg"] = ""
             start_scan(target)
             if target:

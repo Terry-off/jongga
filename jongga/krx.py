@@ -4,14 +4,30 @@
 KRX 정보데이터시스템의 공개 통계(전종목 시세, MDCSTAT01501)를 사용한다.
 응답에는 종가·등락률·거래대금·시가총액이 전 종목분 들어 있어
 유니버스(거래대금 상위 + 상승률 상위)를 그날 기준으로 그대로 다시 만들 수 있다.
+
+KRX는 세션 쿠키 없이 바로 POST하면 빈 응답을 주는 경우가 있어,
+한 세션으로 로더 페이지를 먼저 방문(쿠키 확보)한 뒤 데이터를 요청한다.
 """
 import requests
 
-URL = "http://data.krx.co.kr/comm/bldAttendant/getJsonData.cmd"
+DATA_URL = "http://data.krx.co.kr/comm/bldAttendant/getJsonData.cmd"
+WARMUP_URL = "http://data.krx.co.kr/contents/MDC/MDI/mdiLoader/index.cmd"
+BLD = "dbms/MDC/STAT/standard/MDCSTAT01501"
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (jongga historical lookup)",
-    "Referer": "http://data.krx.co.kr/contents/MDC/MDI/mdiLoader/index.cmd",
+    "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                   "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"),
+    "Referer": WARMUP_URL,
+    "X-Requested-With": "XMLHttpRequest",
+    "Accept": "application/json, text/javascript, */*; q=0.01",
 }
+
+
+class KrxResult:
+    """fetch_day 결과 — rows와 진단 정보(휴장/연결오류 구분용)"""
+    def __init__(self, rows, status: str, detail: str = ""):
+        self.rows = rows
+        self.status = status          # ok / empty(휴장 추정) / error
+        self.detail = detail
 
 
 def _num(value) -> int:
@@ -51,23 +67,53 @@ def parse_rows(out_block: list[dict]) -> list[dict]:
     return rows
 
 
-def fetch_day(date_yyyymmdd: str, timeout: int = 20) -> list[dict]:
-    """해당 거래일의 전 종목 시세. 휴장일·실패 시 빈 리스트"""
+def fetch_day_detailed(date_yyyymmdd: str, timeout: int = 20) -> KrxResult:
+    """해당 거래일의 전 종목 시세 + 진단. 세션 쿠키 확보 후 mktId ALL→개별 순으로 시도"""
+    session = requests.Session()
+    session.headers.update(HEADERS)
     try:
-        resp = requests.post(URL, headers=HEADERS, timeout=timeout, data={
-            "bld": "dbms/MDC/STAT/standard/MDCSTAT01501",
-            "locale": "ko_KR",
-            "mktId": "ALL",
-            "trdDd": date_yyyymmdd,
-            "share": "1",
-            "money": "1",
-            "csvxls_isNo": "false",
-        })
+        session.get(WARMUP_URL, timeout=timeout)   # JSESSIONID 쿠키 확보
+    except requests.RequestException as exc:
+        return KrxResult([], "error", f"KRX 접속 실패({exc.__class__.__name__})")
+
+    def _request(mkt_id: str) -> tuple[list, str]:
+        try:
+            resp = session.post(DATA_URL, timeout=timeout, data={
+                "bld": BLD, "locale": "ko_KR", "mktId": mkt_id,
+                "trdDd": date_yyyymmdd, "share": "1", "money": "1",
+                "csvxls_isNo": "false",
+            })
+        except requests.RequestException as exc:
+            return [], f"요청 실패({exc.__class__.__name__})"
         if resp.status_code != 200:
-            return []
-        return parse_rows(resp.json().get("OutBlock_1", []))
-    except (requests.RequestException, ValueError):
-        return []
+            return [], f"HTTP {resp.status_code}"
+        try:
+            body = resp.json()
+        except ValueError:
+            return [], f"JSON 아님: {resp.text[:80]}"
+        return body.get("OutBlock_1", []), ""
+
+    block, err = _request("ALL")
+    if not block and not err:
+        # ALL이 비면 코스피·코스닥 개별로 재시도 (일부 날짜는 ALL 미지원)
+        merged = []
+        for mkt in ("STK", "KSQ"):
+            part, perr = _request(mkt)
+            merged.extend(part)
+            err = err or perr
+        block = merged
+
+    rows = parse_rows(block)
+    if rows:
+        return KrxResult(rows, "ok")
+    if err:
+        return KrxResult([], "error", err)
+    return KrxResult([], "empty", "응답은 받았으나 종목이 0개 (휴장일로 추정)")
+
+
+def fetch_day(date_yyyymmdd: str, timeout: int = 20) -> list[dict]:
+    """간편 버전 — rows만 반환 (실패·휴장 시 빈 리스트)"""
+    return fetch_day_detailed(date_yyyymmdd, timeout).rows
 
 
 def build_universe(rows: list[dict], cfg) -> list[dict]:

@@ -82,5 +82,35 @@ class TestWebApp(unittest.TestCase):
         self.assertEqual(settings.cfg("trading_value.midsmall_min_eok"), 300)
 
 
+class TestPastDateGuards(unittest.TestCase):
+    """과거 날짜 조회의 사전 안내 — 네트워크를 부르기 전에 휴장일을 걸러낸다"""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.client = TestClient(create_app(demo=False))
+
+    @classmethod
+    def tearDownClass(cls):
+        settings.clear_overrides()
+
+    def test_election_holiday_immediate_message(self):
+        # 2026-06-03 지방선거(증시 휴장) — KRX 호출 없이 즉시 안내
+        res = self.client.get("/?date=2026-06-03")
+        self.assertEqual(res.status_code, 200)
+        self.assertIn("휴장일이에요", res.text)
+
+    def test_weekend_immediate_message(self):
+        res = self.client.get("/?date=2026-06-07")  # 일요일
+        self.assertEqual(res.status_code, 200)
+        self.assertIn("휴장일이에요", res.text)
+
+    def test_other_date_clears_previous_error(self):
+        # 휴장일 오류가 떠 있어도 다른 날짜를 고르면 새로 진행(스캔 시작)되어야 한다
+        self.client.get("/?date=2026-06-03")
+        res = self.client.get("/?date=2026-06-04")
+        self.assertEqual(res.status_code, 200)
+        self.assertNotIn("2026-06-03은 증시 휴장일", res.text)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -122,13 +122,20 @@ class HistoricalProvider:
         if self._universe is None:
             from jongga import krx
             from jongga.settings import cfg
-            rows = krx.fetch_day(self.ymd)
-            if not rows:
+            result = krx.fetch_day_detailed(self.ymd)
+            if not result.rows:
+                print(f"(진단) {self.date} KRX 조회 결과: status={result.status} / {result.detail}",
+                      file=sys.stderr)
+                if result.status == "empty":
+                    raise RuntimeError(
+                        f"{self.date}은 휴장일로 보여요 — 그날 거래된 종목이 없어요 "
+                        "(주말·공휴일·임시휴장일). 거래가 있었던 평일을 선택해주세요.")
                 raise RuntimeError(
-                    f"{self.date}의 시장 데이터를 받지 못했어요 — 휴장일(주말·공휴일)이거나 "
-                    "KRX 연결 문제예요. 다른 거래일을 선택해주세요.")
-            self._krx = {r["code"]: r for r in rows}
-            self._universe = krx.build_universe(rows, cfg)
+                    f"{self.date}의 시장 데이터를 거래소(KRX)에서 받지 못했어요. "
+                    f"원인: {result.detail or '알 수 없음'}. "
+                    "잠시 후 다시 시도하거나 인터넷 연결을 확인해주세요.")
+            self._krx = {r["code"]: r for r in result.rows}
+            self._universe = krx.build_universe(result.rows, cfg)
         return self._universe
 
     def snapshot(self, code):
