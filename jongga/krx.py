@@ -94,14 +94,19 @@ def fetch_day_detailed(date_yyyymmdd: str, timeout: int = 20) -> KrxResult:
         return body.get("OutBlock_1", []), ""
 
     block, err = _request("ALL")
-    if not block and not err:
-        # ALL이 비면 코스피·코스닥 개별로 재시도 (일부 날짜는 ALL 미지원)
-        merged = []
+    if not block:
+        # ALL이 비거나 오류(HTTP 400 포함) → 코스피·코스닥 개별로 재시도
+        merged, sub_err = [], ""
         for mkt in ("STK", "KSQ"):
             part, perr = _request(mkt)
             merged.extend(part)
-            err = err or perr
+            if perr and not sub_err:
+                sub_err = perr
         block = merged
+        if block:
+            err = ""        # 개별 조회 성공 → 오류 초기화
+        elif not err:
+            err = sub_err   # ALL도 빈 응답 + 개별도 실패 → 개별 오류 사용
 
     rows = parse_rows(block)
     if rows:
