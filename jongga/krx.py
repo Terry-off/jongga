@@ -71,22 +71,27 @@ def fetch_day(date_yyyymmdd: str, timeout: int = 20) -> list[dict]:
 
 
 def build_universe(rows: list[dict], cfg) -> list[dict]:
-    """실시간 유니버스와 같은 규칙으로 압축: 거래대금 상위 + 상승률 상위 합집합"""
-    valid = [r for r in rows if r["trading_value"] > 0]
-    by_value = sorted(valid, key=lambda r: r["trading_value"], reverse=True)
+    """전 종목에서 '베토 2(거래대금)를 통과할 가능성이 있는' 종목을 전부 뽑는다 — 누락 0
 
-    picked: dict[str, dict] = {}
-    for r in by_value[:60]:
-        picked[r["code"]] = dict(r, sources="거래대금상위")
-
+    포함 조건 (베토 2와 수학적으로 동일):
+      ① 거래대금 ≥ 중소형 최소 기준(기본 300억) — 중소형·테마주가 통과할 수 있는 최저선
+      ② 거래대금 순위 ≤ 대형주 기준(기본 50위) — 대형주 판정 경로
+    이 컷 아래 종목은 어떤 분류로도 베토 2를 통과할 수 없으므로 제외해도 결과가 같다.
+    """
+    floor = float(cfg("trading_value.midsmall_min_eok", 300)) * 1e8
+    rank_max = int(cfg("trading_value.large_rank_max", 50))
     min_chg = float(cfg("universe.min_change_rate", 3.0))
-    min_val = float(cfg("sector.sync_min_value_eok", 50)) * 1e8
-    risers = [r for r in valid if r["change_rate"] >= min_chg and r["trading_value"] >= min_val]
-    risers.sort(key=lambda r: r["trading_value"], reverse=True)
-    for r in risers[:40]:
-        if r["code"] in picked:
-            picked[r["code"]]["sources"] += ",상승률상위"
-        else:
-            picked[r["code"]] = dict(r, sources="상승률상위")
 
-    return sorted(picked.values(), key=lambda r: r["trading_value"], reverse=True)
+    by_value = sorted((r for r in rows if r["trading_value"] > 0),
+                      key=lambda r: r["trading_value"], reverse=True)
+    out = []
+    for rank, r in enumerate(by_value, start=1):
+        if r["trading_value"] < floor and rank > rank_max:
+            break  # 거래대금 내림차순이므로 이후는 전부 기준 미달
+        src = []
+        if rank <= rank_max:
+            src.append("거래대금상위")
+        if r["change_rate"] >= min_chg:
+            src.append("상승률상위")
+        out.append(dict(r, sources=",".join(src) or "거래대금 기준 통과"))
+    return out

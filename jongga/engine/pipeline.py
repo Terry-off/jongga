@@ -72,10 +72,24 @@ def _validate_material(stock: StockView, ctx: DayContext) -> None:
                                "는 확인 불가 — 나머지 조건 충족으로 제한 인정")
 
 
+def _eligible(universe: list[dict]) -> tuple[list[tuple[int, dict]], int]:
+    """베토 2를 통과할 가능성이 있는 종목만 남긴다 (결과 동일 보장, 누락 0)
+
+    거래대금 ≥ 중소형 최소(300억) 이거나 거래대금 순위 ≤ 대형주 기준(50위).
+    반환: ([(전체 기준 순위, row)...], 자동 제외 수)
+    """
+    floor = float(cfg("trading_value.midsmall_min_eok", 300)) * 1e8
+    rank_max = int(cfg("trading_value.large_rank_max", 50))
+    kept = [(rank, row) for rank, row in enumerate(universe, start=1)
+            if row.get("trading_value", 0) >= floor or rank <= rank_max]
+    return kept, len(universe) - len(kept)
+
+
 def run(provider, trade_date: str | None = None, top_n: int | None = None,
         progress=lambda done, total, label: None) -> DayResult:
     d = date_cls.fromisoformat(trade_date) if trade_date else date_cls.today()
-    top_n = top_n or cfg("universe.analyze_top", 40)
+    # 0 = 제한 없음(거래대금 기준을 통과할 수 있는 전 종목)
+    top_n = top_n if top_n is not None else cfg("universe.analyze_top", 0)
 
     progress(0, 0, "오늘 돈이 몰린 종목을 모으는 중")
     universe = sorted(provider.universe(), key=lambda r: r.get("trading_value", 0), reverse=True)
@@ -101,9 +115,10 @@ def run(provider, trade_date: str | None = None, top_n: int | None = None,
 
     candidates, rejected = [], []
     early_filtered = 0
-    analyzed = universe[:top_n]
-    for rank, row in enumerate(analyzed, start=1):
-        progress(rank, len(analyzed), f"{row.get('name', row.get('code', ''))} 분석 중")
+    eligible, below_cut = _eligible(universe)
+    analyzed = eligible[:top_n] if top_n else eligible
+    for done, (rank, row) in enumerate(analyzed, start=1):
+        progress(done, len(analyzed), f"{row.get('name', row.get('code', ''))} 분석 중")
 
         # 1단계: 유니버스·스냅샷·테마만으로 — 거래대금·경보·이벤트·과열 후발주
         stock = _base_stock(provider, row, rank)
@@ -166,6 +181,10 @@ def run(provider, trade_date: str | None = None, top_n: int | None = None,
     notes = []
     if candidates and candidates[0].unavailable:
         notes.append("확인 못한 항목(" + ", ".join(candidates[0].unavailable) + ")은 만점에서 제외하고 채점했어요")
+    if below_cut:
+        floor = cfg("trading_value.midsmall_min_eok", 300)
+        notes.append(f"전체 {len(universe)}종목 중 거래대금 {floor:,.0f}억 미만 {below_cut}종목은 "
+                     "기준 미달이 확정이라 자동 제외했어요 (설계서 베토 2와 동일한 컷)")
     if early_filtered:
         notes.append(f"{early_filtered}종목은 1차 조건(거래대금·경보 등)에서 일찍 걸러 분석 시간을 줄였어요")
     return DayResult(date=d.isoformat(), signal=signal, candidates=candidates,

@@ -18,13 +18,13 @@ def collect_day(provider=None, trade_date: str | None = None, top_n: int | None 
 
     provider = provider or LiveProvider()
     d = trade_date or date_cls.today().isoformat()
-    top_n = top_n or cfg("universe.analyze_top", 40)
+    cap = top_n if top_n is not None else cfg("universe.analyze_top", 0)  # 0 = 전체
     init_db()
 
     log(f"[1/4] 오늘 돈이 몰린 종목 수집 중...")
     universe = sorted(provider.universe(), key=lambda r: r.get("trading_value", 0), reverse=True)
     save_universe(d, universe)
-    analyzed = universe[:top_n]
+    analyzed = universe[:cap] if cap else universe
     log(f"      유니버스 {len(universe)}종목 저장 (정밀 수집 대상 {len(analyzed)}종목)")
 
     material_on = bool(getattr(provider, "material_enabled", lambda: False)())

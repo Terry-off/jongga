@@ -61,7 +61,8 @@ calendar:
 universe:
   min_change_rate: 3.0         # 상승률 상위 편입 컷(%)
   rank_fetch_count: 30         # 순위 API 1회 조회 종목 수
-  analyze_top: 40              # 거래대금 상위 N종목만 정밀 분석 (API 호출량 관리)
+  analyze_top: 0               # 분석 종목 수 상한. 0 = 제한 없음
+                               # (거래대금 기준을 통과할 수 있는 전 종목 — 베토 2와 동일 컷이라 누락 없음)
 
 kis:
   rate_limit_per_sec: 15       # 실전 한도 20건/초의 75% (속도와 안전의 절충)

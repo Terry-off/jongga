@@ -61,8 +61,8 @@ GROUPS: list[tuple[str, list[Item]]] = [
              "이 점수 이상이면 매매는 금지하되 기록용으로 표시", step=1, min=0, max=100),
     ]),
     ("🔍 분석 범위", [
-        Item("universe.analyze_top", "정밀 분석 종목 수", "종목",
-             "거래대금 상위 몇 종목까지 분봉·수급까지 정밀 분석할지 (많을수록 느려져요)", step=5, min=5, max=100),
+        Item("universe.analyze_top", "분석 종목 수 상한", "종목",
+             "0 = 제한 없음(거래대금 기준을 통과할 수 있는 전 종목 — 누락 없음). 숫자를 넣으면 거래대금 상위 그 수까지만 봐서 더 빨라져요", step=10, min=0, max=500),
         Item("universe.min_change_rate", "상승률 상위 편입 컷", "%",
              "이 등락률 이상인 종목을 상승률 경로로 후보에 추가", step=0.5, min=0),
     ]),

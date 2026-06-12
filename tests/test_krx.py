@@ -41,31 +41,36 @@ def _row(code, change, value_eok):
 
 
 class TestBuildUniverse(unittest.TestCase):
-    def test_top_value_and_risers_merge(self):
-        rows = (
-            # 거래대금 상위권 (등락률 낮음)
-            [_row(f"V{i:05d}", 1.0, 1000 - i) for i in range(70)]
-            # 상승률 상위 (거래대금 60위 밖이지만 50억 이상)
-            + [_row("RISER1", 12.0, 80), _row("RISER2", 8.0, 70)]
-            # 상승해도 거래대금이 너무 작으면 제외
-            + [_row("TINY00", 25.0, 10)]
-        )
+    """포함 규칙 = 베토 2와 동일: 거래대금 ≥ 300억 또는 순위 ≤ 50위 → 누락 0"""
+
+    def test_all_above_floor_included_regardless_of_rank(self):
+        # 거래대금 80위(310억)도 300억 이상이면 포함 — 기존 '상위 40개' 상한 제거 검증
+        rows = [_row(f"V{i:05d}", 1.0, 1000 - i * 8) for i in range(88)]  # 1000억 → 304억
         uni = krx.build_universe(rows, cfg)
-        codes = {r["code"] for r in uni}
-        self.assertIn("RISER1", codes)
-        self.assertIn("RISER2", codes)
-        self.assertNotIn("TINY00", codes)
-        self.assertNotIn("V00065", codes)  # 거래대금 60위 밖 + 등락률 미달
-        # 거래대금 내림차순 정렬
+        self.assertEqual(len(uni), 88)  # 전부 300억 이상 → 전부 포함
+
+    def test_below_floor_excluded_even_if_riser(self):
+        rows = [_row(f"V{i:05d}", 1.0, 1000 - i) for i in range(60)] \
+            + [_row("TINY00", 25.0, 10)]  # +25%지만 10억 — 베토 2 확정 탈락
+        uni = krx.build_universe(rows, cfg)
+        self.assertNotIn("TINY00", {r["code"] for r in uni})
+
+    def test_top_rank_kept_below_floor(self):
+        # 한산한 날: 전부 300억 미만이어도 거래대금 50위까지는 대형주 경로로 포함
+        rows = [_row(f"V{i:05d}", 1.0, 290 - i) for i in range(60)]
+        uni = krx.build_universe(rows, cfg)
+        self.assertEqual(len(uni), 50)
+
+    def test_sources_tagging_and_order(self):
+        rows = [_row(f"V{i:05d}", 1.0, 1000 - i) for i in range(55)] \
+            + [_row("RISER1", 12.0, 320)]
+        uni = krx.build_universe(rows, cfg)
+        top1 = uni[0]
+        self.assertIn("거래대금상위", top1["sources"])
+        riser = next(r for r in uni if r["code"] == "RISER1")
+        self.assertIn("상승률상위", riser["sources"])
         values = [r["trading_value"] for r in uni]
         self.assertEqual(values, sorted(values, reverse=True))
-
-    def test_overlap_gets_both_sources(self):
-        rows = [_row("BOTH00", 10.0, 500)] + [_row(f"V{i:05d}", 0.5, 400 - i) for i in range(30)]
-        uni = krx.build_universe(rows, cfg)
-        both = next(r for r in uni if r["code"] == "BOTH00")
-        self.assertIn("거래대금상위", both["sources"])
-        self.assertIn("상승률상위", both["sources"])
 
 
 if __name__ == "__main__":
