@@ -1,14 +1,20 @@
-"""판단 파이프라인 — 신호등 → 유니버스 → 재료 검증 → 베토 → 채점 → 판정·비중 (DESIGN.md 4장)"""
+"""판단 파이프라인 — 신호등 → 유니버스 → 단계별 베토 → 채점 → 판정·비중 (DESIGN.md 4장)
+
+속도 원칙: 베토는 '하나라도 걸리면 탈락'이므로, 싼 데이터(거래대금·경보)로 걸리는 종목은
+비싼 데이터(분봉·뉴스·수급)를 아예 조회하지 않는다. 결과는 전부 조회했을 때와 동일하다.
+"""
 from datetime import date as date_cls
 
 from jongga import calendar_events
 from jongga.engine import candle, market, position, score
 from jongga.engine.models import Candidate, DayContext, DayResult, StockView, Veto
-from jongga.engine.veto import classify, run_vetoes
+from jongga.engine.veto import (classify, stage_basic, stage_daily,
+                                stage_material, stage_minutes)
 from jongga.settings import cfg
 
 
-def _load_stock(provider, row: dict, rank: int) -> StockView:
+def _base_stock(provider, row: dict, rank: int) -> StockView:
+    """1단계용 — 스냅샷까지만 싣고, 비싼 데이터(일봉·분봉·수급)는 통과할 때마다 채운다"""
     code = row["code"]
     snapshot = provider.snapshot(code) or {}
     return StockView(
@@ -20,9 +26,9 @@ def _load_stock(provider, row: dict, rank: int) -> StockView:
         trading_value=row.get("trading_value", 0),
         market_cap_eok=snapshot.get("market_cap_eok", 0),
         value_rank=rank,
-        daily=provider.daily(code) or [],
-        minutes=provider.minutes(code) or [],
-        investor=provider.investor(code) or [],
+        daily=[],
+        minutes=[],
+        investor=[],
         flags=snapshot,
         sources=row.get("sources", ""),
     )
@@ -94,12 +100,29 @@ def run(provider, trade_date: str | None = None, top_n: int | None = None,
     )
 
     candidates, rejected = [], []
+    early_filtered = 0
     analyzed = universe[:top_n]
     for rank, row in enumerate(analyzed, start=1):
         progress(rank, len(analyzed), f"{row.get('name', row.get('code', ''))} 분석 중")
-        stock = _load_stock(provider, row, rank)
+
+        # 1단계: 유니버스·스냅샷·테마만으로 — 거래대금·경보·이벤트·과열 후발주
+        stock = _base_stock(provider, row, rank)
         if resolver:
             resolver.annotate(stock)
+        vetoes = stage_basic(stock, ctx)
+        if vetoes:
+            rejected.append((stock, vetoes))
+            early_filtered += 1
+            continue
+
+        # 2단계: 일봉 — 윗꼬리·힘없는 종가
+        stock.daily = provider.daily(stock.code) or []
+        vetoes = stage_daily(stock, ctx)
+        if vetoes:
+            rejected.append((stock, vetoes))
+            continue
+
+        # 3단계: 재료(뉴스·공시) — 재료 없음·물량 이벤트·금요일 비A급
         if material_available:
             mat = provider.materials(stock.code, stock.name) or {}
             stock.material_checked = bool(mat.get("checked"))
@@ -107,10 +130,20 @@ def run(provider, trade_date: str | None = None, top_n: int | None = None,
             stock.material_evidence = mat.get("evidence", [])
             stock.material_risks = mat.get("risks", [])
             _validate_material(stock, ctx)
-        vetoes = run_vetoes(stock, ctx)
+        vetoes = stage_material(stock, ctx)
         if vetoes:
             rejected.append((stock, vetoes))
             continue
+
+        # 4단계: 분봉(가장 비싼 조회) — 여기까지 살아남은 종목만
+        stock.minutes = provider.minutes(stock.code) or []
+        vetoes = stage_minutes(stock, ctx)
+        if vetoes:
+            rejected.append((stock, vetoes))
+            continue
+
+        # 최종 생존자만 수급까지 조회해 채점
+        stock.investor = provider.investor(stock.code) or []
         items, earned, available_max, pct, unavailable = score.compute(stock, ctx)
         tier, label = score.verdict(pct, cfg)
         # 금요일·연휴 전일은 A급+85점이어도 절반 비중까지만 (설계서 제2부)
@@ -133,5 +166,7 @@ def run(provider, trade_date: str | None = None, top_n: int | None = None,
     notes = []
     if candidates and candidates[0].unavailable:
         notes.append("확인 못한 항목(" + ", ".join(candidates[0].unavailable) + ")은 만점에서 제외하고 채점했어요")
+    if early_filtered:
+        notes.append(f"{early_filtered}종목은 1차 조건(거래대금·경보 등)에서 일찍 걸러 분석 시간을 줄였어요")
     return DayResult(date=d.isoformat(), signal=signal, candidates=candidates,
                      rejected=rejected, analyzed=len(analyzed), notes=notes)

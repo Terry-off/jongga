@@ -64,6 +64,6 @@ universe:
   analyze_top: 40              # 거래대금 상위 N종목만 정밀 분석 (API 호출량 관리)
 
 kis:
-  rate_limit_per_sec: 10       # 실전 한도 20건/초의 절반(안전 마진)
+  rate_limit_per_sec: 15       # 실전 한도 20건/초의 75% (속도와 안전의 절충)
   timeout_sec: 10
   max_retries: 3

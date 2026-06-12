@@ -2,7 +2,7 @@
 
 종목 구성:
   알파전자   — 모범 사례: A급 재료(수주 공시) + 고가권 마감 + 외인·기관 양매수 → 정상 비중 후보
-  감마바이오 — 베토 4: 오후 2시 이후 수직 급등 (재료가 C급 '단독' 기사뿐인 전형적 함정)
+  감마바이오 — 베토 4: A급 재료가 있어도 오후 2시 이후 수직 급등이면 탈락
   베타테크   — 베토 3: 장대 윗꼬리 + 힘없는 종가
   엡실론건설 — 베토 6: 투자경고 지정 (A급 재료가 있어도 위험종목은 무조건 제외)
   제타식품   — B급 재료, 차트 무난 → 점수 70점대 '관찰만'
@@ -161,7 +161,7 @@ def build_demo_day() -> dict:
         final_close=20840, final_volume=8000,
     )
     stocks.append(_stock("204040", "델타소재", "KOSPI", 20000, delta_min,
-                         cap_eok=1500, prev_value=int(250e8), today_value=int(350e8),
+                         cap_eok=1500, prev_value=int(250e8), today_value=int(600e8),
                          daily_base=gen_daily(59, 19000, 20000, 250000, int(250e8), spike_high=23000),
                          investor_rows=[{"date": "20260610", "foreign_net": -3000, "inst_net": -1000, "person_net": 4200}]))
 
@@ -184,8 +184,8 @@ def build_demo_day() -> dict:
             "공시(A급): 단일판매ㆍ공급계약체결 — 해외 2차전지 장비 320억 원",
             "기사(A급 신호): 알파전자, 유럽 배터리사와 320억 규모 공급계약 수주",
         ]},
-        "203030": {"checked": True, "grade": "C", "risks": [], "evidence": [
-            "기사(C급 신호): [단독] 감마바이오, 신약 기술수출 추진 중",
+        "203030": {"checked": True, "grade": "A", "risks": [], "evidence": [
+            "기사(A급 신호): 감마바이오, 신약 기술수출 본계약 체결",
         ]},
         "202020": {"checked": True, "grade": "B", "risks": [], "evidence": [
             "기사(B급 신호): 증권가, 베타테크 목표가 상향 행렬",
